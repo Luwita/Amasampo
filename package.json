@@ -3,19 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^13.5.0",
+    "express": "^5.2.1",
+    "pg": "^8.23.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
     "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "zod": "^4.6.5"
   },
   "scripts": {
+    "dev": "concurrently -k -n api,web -c green,cyan \"npm:server:dev\" \"npm:start\"",
     "start": "react-scripts start",
+    "server": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=server/.env server/index.js",
+    "server:dev": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=server/.env --watch server/index.js",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:server": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"server/**/*.test.js\"",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -35,5 +44,14 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  }
+  },
+  "jest": {
+    "moduleNameMapper": {
+      "^react-router/dom$": "<rootDir>/node_modules/react-router/dist/development/dom-export.js"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  },
+  "proxy": "http://localhost:4000"
 }

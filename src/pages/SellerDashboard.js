@@ -1,0 +1,357 @@
+import { useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import BulkUpload from '../components/BulkUpload';
+import { ShopPriceRequests } from '../components/PriceRequests';
+import Promotions from '../components/Promotions';
+import { ProductImage } from '../components/ProductCard';
+import ProductForm from '../components/ProductForm';
+import { SalesReport, ShopReviews } from '../components/SellerInsights';
+import ShipmentStatus, { statusLabel } from '../components/ShipmentStatus';
+import ShopForm from '../components/ShopForm';
+import { useStore } from '../context/StoreContext';
+import { formatLocation } from '../data/zambia';
+import { useProduct, useProductSearch } from '../hooks/useProducts';
+import { formatK } from '../utils/format';
+
+function OrderCard({ order, shipment }) {
+  const { updateShipment, notify } = useStore();
+  const [tracking, setTracking] = useState(shipment.tracking);
+  const [busy, setBusy] = useState(false);
+  const pickup = shipment.courier === 'pickup';
+
+  const advance = async (patch, message) => {
+    setBusy(true);
+    try {
+      await updateShipment(order.id, shipment.shopId, patch);
+      notify(message);
+    } catch (err) {
+      notify(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card order">
+      <div className="order-head">
+        <strong>{order.id}</strong>
+        <span className="muted small">
+          {new Date(order.date).toLocaleString('en-ZM', { dateStyle: 'medium', timeStyle: 'short' })}
+        </span>
+        <span className={`status status-${shipment.status}`}>{statusLabel(shipment)}</span>
+      </div>
+      <div className="small">
+        {shipment.items.map((i) => (
+          <div key={`${i.id}-${i.options}`}>
+            {i.qty} × {i.name}
+            {i.options && <strong> ({i.options})</strong>} @ {formatK(i.price)}
+          </div>
+        ))}
+      </div>
+      <div className="small muted">
+        👤 {order.buyer.name} · {order.buyer.phone} · 📍 {order.shipping.address}, {formatLocation(order.shipping)}
+      </div>
+      <div className="small">
+        {order.paid ? '✅ Paid' : '💵 Collect payment on delivery'}: <strong>{formatK(shipment.subtotal)}</strong> +
+        delivery {formatK(shipment.fee)}
+      </div>
+      <ShipmentStatus shipment={shipment} />
+
+      {shipment.status === 'pending' && (
+        <div className="dispatch-row">
+          {!pickup && (
+            <input
+              placeholder={`${shipment.courierName} tracking / waybill no.`}
+              value={tracking}
+              onChange={(e) => setTracking(e.target.value)}
+              aria-label="Tracking number"
+            />
+          )}
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={busy}
+            onClick={() =>
+              advance(
+                { status: 'dispatched', tracking: tracking.trim() },
+                pickup
+                  ? 'Buyer notified that the order is ready to collect'
+                  : `Marked as sent with ${shipment.courierName}`,
+              )
+            }
+          >
+            {pickup ? 'Ready for collection' : `Hand over to ${shipment.courierName}`}
+          </button>
+        </div>
+      )}
+      {shipment.status === 'dispatched' && (
+        <div className="dispatch-row">
+          <button
+            className="btn btn-dark btn-sm"
+            disabled={busy}
+            onClick={() => advance({ status: 'delivered' }, 'Order marked as delivered')}
+          >
+            Mark as {pickup ? 'collected' : 'delivered'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductList({ result, lowOnly, go }) {
+  const { deleteProduct, notify } = useStore();
+
+  if (!result.items.length) {
+    if (result.loading) return <p className="muted">Loading…</p>;
+    return (
+      <div className="card empty">
+        <div className="empty-icon">📦</div>
+        <p>{lowOnly ? 'Nothing is running low.' : 'Your shop has no products yet.'}</p>
+        <div className="pdp-buttons center">
+          <button className="btn btn-primary" onClick={() => go({ tab: 'add' })}>
+            Upload a product
+          </button>
+          <button className="btn btn-outline" onClick={() => go({ tab: 'bulk' })}>
+            Upload a spreadsheet
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card seller-products">
+      {result.items.map((p) => (
+        <div key={p.id} className="seller-product">
+          <ProductImage product={p} size="sm" />
+          <div className="grow">
+            <Link to={`/product/${p.id}`} className="cart-line-name">
+              {p.name}
+            </Link>
+            <div className="small muted">
+              {formatK(p.price)}
+              {p.tiers.length > 0 && ` · wholesale from ${formatK(p.tiers[p.tiers.length - 1].price)}`} ·{' '}
+              <span className={!p.stock ? 'error' : p.stock <= p.lowStockAt ? 'warn' : ''}>
+                {p.stock ? `${p.stock} in stock` : 'Sold out'}
+              </span>
+              {p.reviewCount > 0 && ` · ★ ${p.rating} (${p.reviewCount})`}
+            </div>
+          </div>
+          <div className="pdp-buttons">
+            <button className="btn btn-outline btn-sm" onClick={() => go({ tab: 'products', edit: p.id })}>
+              Edit
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() =>
+                window.confirm(`Remove "${p.name}" from your shop?`) &&
+                deleteProduct(p.id).catch((err) => notify(err.message))
+              }
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ))}
+      {result.hasMore && (
+        <div className="load-more">
+          <button className="btn btn-outline" onClick={result.loadMore} disabled={result.loading}>
+            Load more
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SellerDashboard() {
+  const { user, myShop, shopOrders, addProduct, updateProduct, updateShop } = useStore();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') ?? 'products';
+  const editing = params.get('edit');
+  const lowOnly = params.get('low') === '1';
+  const shopId = myShop?.id;
+
+  const products = useProductSearch(
+    shopId ? { shop: shopId, sort: 'newest', limit: 50, lowStock: lowOnly ? '1' : '' } : null,
+  );
+  const productCount = useProductSearch(shopId ? { shop: shopId, limit: 1 } : null).total;
+  const lowCount = useProductSearch(shopId ? { shop: shopId, lowStock: '1', limit: 1 } : null).total;
+  const { product: editProduct } = useProduct(editing);
+
+  if (!myShop) {
+    return (
+      <div className="container section narrow">
+        <div className="card empty">
+          <div className="empty-icon">🏪</div>
+          <h2>You don't have a shop yet</h2>
+          <p className="muted">Open a free shop to upload products and receive orders.</p>
+          <Link to="/sell#register" className="btn btn-primary">
+            Open my shop
+          </Link>
+          <Link to="/login" className="muted small">
+            Already have one? Sign in with your shop phone number
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const myOrders = shopOrders
+    .map((o) => ({ order: o, shipment: o.shipments.find((s) => s.shopId === myShop.id) }))
+    .filter((x) => x.shipment);
+  const pending = myOrders.filter((x) => x.shipment.status === 'pending').length;
+  const sales = myOrders.reduce((sum, x) => sum + x.shipment.subtotal, 0);
+  const go = (next) => setParams(next);
+  const tabs = [
+    ['products', `My products (${productCount})`],
+    ['add', '+ Add product'],
+    ['bulk', 'Bulk upload'],
+    ['orders', 'Orders', pending],
+    ['reviews', 'Reviews'],
+    ['quotes', 'Price requests'],
+    ['promotions', 'Promotions'],
+    ['report', 'Sales report'],
+    ['settings', 'Shop & delivery'],
+  ];
+
+  return (
+    <div className="container section">
+      <div className="dash-head card">
+        <span className="shop-logo">{myShop.logo ?? '🏪'}</span>
+        <div className="grow">
+          <h1>{myShop.name}</h1>
+          <p className="muted">
+            📍 {myShop.area}, {formatLocation(myShop)} ·{' '}
+            <Link to={`/store/${myShop.id}`} className="link">
+              View public shop page →
+            </Link>
+          </p>
+        </div>
+        <div className="stats">
+          <div>
+            <strong>{productCount}</strong>
+            <span>Products</span>
+          </div>
+          <div>
+            <strong>{pending}</strong>
+            <span>To dispatch</span>
+          </div>
+          <div>
+            <strong>{formatK(sales)}</strong>
+            <span>Sales</span>
+          </div>
+        </div>
+      </div>
+
+      {lowCount > 0 && tab !== 'report' && (
+        <div className="card alert-bar" role="status">
+          ⚠️ {lowCount} product{lowCount > 1 ? 's are' : ' is'} running low on stock.{' '}
+          <button className="link-btn" onClick={() => go({ tab: 'products', low: '1' })}>
+            Show {lowCount > 1 ? 'them' : 'it'}
+          </button>
+        </div>
+      )}
+
+      <div className="tabs tabs-scroll">
+        {tabs.map(([id, label, badge]) => (
+          <button key={id} className={tab === id ? 'on' : ''} onClick={() => go({ tab: id })}>
+            {label} {badge > 0 && <span className="badge-inline">{badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'products' && editing && (
+        <div className="card form-card narrow-card">
+          <h2>Edit product</h2>
+          {editProduct ? (
+            <ProductForm
+              key={editProduct.id}
+              initial={editProduct}
+              submitLabel="Save changes"
+              onCancel={() => go({ tab: 'products' })}
+              onSubmit={async (data) => {
+                await updateProduct(editProduct.id, data);
+                go({ tab: 'products' });
+              }}
+            />
+          ) : (
+            <p className="muted">Loading…</p>
+          )}
+        </div>
+      )}
+
+      {tab === 'products' && !editing && (
+        <>
+          {lowOnly && (
+            <p className="small">
+              Showing products running low.{' '}
+              <button className="link-btn" onClick={() => go({ tab: 'products' })}>
+                Show all
+              </button>
+            </p>
+          )}
+          <ProductList result={products} lowOnly={lowOnly} go={go} />
+        </>
+      )}
+
+      {tab === 'add' && (
+        <div className="card form-card narrow-card">
+          <h2>Upload a product</h2>
+          <ProductForm
+            onSubmit={async (data) => {
+              await addProduct(data);
+              go({ tab: 'products' });
+            }}
+          />
+        </div>
+      )}
+
+      {tab === 'bulk' && (
+        <div className="card form-card">
+          <BulkUpload onDone={() => go({ tab: 'products' })} />
+        </div>
+      )}
+
+      {tab === 'orders' &&
+        (myOrders.length ? (
+          <div className="orders">
+            {myOrders.map(({ order, shipment }) => (
+              <OrderCard key={order.id} order={order} shipment={shipment} />
+            ))}
+          </div>
+        ) : (
+          <div className="card empty">
+            <p>No orders yet. Share your shop link on WhatsApp and Facebook to get your first sale.</p>
+          </div>
+        ))}
+
+      {tab === 'reviews' && <ShopReviews />}
+
+      {tab === 'quotes' && <ShopPriceRequests />}
+
+      {tab === 'promotions' && <Promotions shopId={myShop.id} />}
+
+      {tab === 'report' && (
+        <>
+          <p className="small">
+            <Link to="/seller/statement" className="link">
+              🧾 Monthly statement (commission and payouts) →
+            </Link>
+          </p>
+          <SalesReport onEditProduct={(id) => go({ tab: 'products', edit: id })} />
+        </>
+      )}
+
+      {tab === 'settings' && (
+        <div className="card form-card narrow-card">
+          {myShop.ownerId === user.id ? (
+            <ShopForm initial={myShop} submitLabel="Save settings" onSubmit={(shop) => updateShop(myShop.id, shop)} />
+          ) : (
+            <p className="muted">Demo shops can't be edited.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

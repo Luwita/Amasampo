@@ -1,0 +1,113 @@
+// Turn database rows into the camelCase shapes the React app uses.
+const num = (v) => (v === null || v === undefined ? null : Number(v));
+export const displayPhone = (normalised) => `0${normalised}`;
+
+export const toUser = (row, shopId = null) => ({
+  id: row.id,
+  name: row.name,
+  phone: displayPhone(row.phone),
+  accountType: row.account_type,
+  shopId,
+});
+
+export const toShop = (row) => ({
+  id: row.id,
+  ownerId: row.owner_id,
+  name: row.name,
+  logo: row.logo,
+  category: row.category,
+  province: row.province,
+  town: row.town,
+  area: row.area,
+  phone: row.phone,
+  couriers: row.couriers,
+  ownRates: row.own_rates,
+  rating: num(row.rating),
+  reviewCount: row.review_count ?? 0,
+  productCount: row.product_count ?? null,
+  tpin: row.tpin ?? null,
+  vatRegistered: row.vat_registered ?? false,
+  since: row.since,
+});
+
+export const toProduct = (row) => ({
+  id: row.id,
+  shopId: row.shop_id,
+  name: row.name,
+  category: row.category,
+  icon: row.icon,
+  description: row.description,
+  price: num(row.price),
+  oldPrice: num(row.old_price),
+  tiers: row.tiers,
+  stock: row.stock,
+  sold: row.sold,
+  rating: num(row.rating),
+  reviewCount: row.review_count ?? 0,
+  badge: row.badge,
+  local: row.local,
+  images: row.images,
+  weightKg: num(row.weight_kg) ?? 1,
+  options: row.options ?? [],
+  lowStockAt: row.low_stock_at ?? 5,
+  featuredUntil: row.featured_until ?? null,
+  createdAt: row.created_at,
+});
+
+// `shipments` rows must carry shop_name, shop_province, shop_town and an `items` JSON array.
+export const toOrder = (order, shipments) => ({
+  id: order.id,
+  date: order.created_at,
+  buyer: { name: order.buyer_name, phone: order.buyer_phone },
+  shipping: { province: order.province, town: order.town, address: order.address },
+  payment: order.payment_method,
+  paid: order.payment_status === 'paid',
+  paymentStatus: order.payment_status,
+  subtotal: num(order.subtotal),
+  discount: num(order.discount) ?? 0,
+  delivery: num(order.delivery),
+  total: num(order.total),
+  shipments: shipments.map((s) => ({
+    id: s.id,
+    shopId: s.shop_id,
+    shopName: s.shop_name,
+    shopProvince: s.shop_province,
+    shopTown: s.shop_town,
+    shopArea: s.shop_area,
+    shopPhone: s.shop_phone,
+    shopTpin: s.shop_tpin,
+    shopVatRegistered: s.shop_vat_registered,
+    items: s.items.map((i) => ({
+      id: i.product_id,
+      name: i.name,
+      options: i.options ?? '',
+      qty: i.qty,
+      price: num(i.unit_price),
+      reviewRating: i.review_rating ?? null,
+      quoteId: i.price_request_id ?? null,
+    })),
+    subtotal: num(s.subtotal),
+    discount: num(s.discount) ?? 0,
+    couponCode: s.coupon_code,
+    courier: s.courier,
+    courierName: s.courier_name,
+    fee: num(s.fee),
+    eta: s.eta,
+    status: s.status,
+    tracking: s.tracking,
+  })),
+});
+
+export const toReview = (row) => ({
+  id: row.id,
+  productId: row.product_id,
+  productName: row.product_name,
+  shopId: row.shop_id,
+  orderId: row.order_id,
+  author: row.author_name,
+  rating: row.rating,
+  comment: row.comment,
+  reply: row.reply,
+  repliedAt: row.replied_at,
+  date: row.created_at,
+});

@@ -1,25 +1,129 @@
-import logo from './logo.svg';
+import { useEffect } from 'react';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import './App.css';
+import './marketplace.css';
+import './phase2.css';
+import './phase3.css';
+import Footer from './components/Footer';
+import Header from './components/Header';
+import { StoreProvider, useStore } from './context/StoreContext';
+import Account from './pages/Account';
+import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
+import Home from './pages/Home';
+import Login from './pages/Login';
+import Delivery from './pages/Delivery';
+import { Receipt, Statement } from './pages/Documents';
+import Legal from './pages/Legal';
+import Messages from './pages/Messages';
+import OrderSuccess from './pages/OrderSuccess';
+import ProductDetail from './pages/ProductDetail';
+import Sell from './pages/Sell';
+import SellerDashboard from './pages/SellerDashboard';
+import Shop from './pages/Shop';
+import Stores, { StorePage } from './pages/Stores';
 
-function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+function ScrollManager() {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (hash) {
+      document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }, [pathname, hash]);
+  return null;
+}
+
+function OfflineNotice() {
+  const { online } = useStore();
+  return online ? null : (
+    <div className="status-bar offline-bar" role="status">
+      You're offline. Pages you've already opened still work; orders and messages need a connection.
     </div>
   );
 }
 
-export default App;
+function CatalogStatus() {
+  const { catalogStatus, catalogError, reloadCatalog } = useStore();
+  if (catalogStatus === 'loading') return <div className="status-bar">Loading products…</div>;
+  if (catalogStatus === 'error') {
+    return (
+      <div className="status-bar error-bar" role="alert">
+        {catalogError}{' '}
+        <button className="link-btn" onClick={reloadCatalog}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+  return null;
+}
+
+function Toast() {
+  const { toast } = useStore();
+  return toast ? (
+    <div className="toast" role="status">
+      {toast}
+    </div>
+  ) : null;
+}
+
+// Re-mount the product page when the id changes so quantity state resets.
+function ProductRoute() {
+  const { id } = useParams();
+  return <ProductDetail key={id} />;
+}
+
+function NotFound() {
+  return (
+    <div className="container section card empty">
+      <h2>Page not found</h2>
+      <Link to="/" className="btn btn-primary">
+        Go home
+      </Link>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <StoreProvider>
+      <BrowserRouter>
+        <ScrollManager />
+        <Header />
+        <main>
+          <OfflineNotice />
+          <CatalogStatus />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/shop" element={<Shop />} />
+            <Route path="/wholesale" element={<Shop wholesale />} />
+            <Route path="/product/:id" element={<ProductRoute />} />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/order/:id" element={<OrderSuccess />} />
+            <Route path="/order/:id/receipt" element={<Receipt />} />
+            <Route path="/seller/statement" element={<Statement />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/messages/:id" element={<Messages />} />
+            <Route path="/legal/:doc" element={<Legal />} />
+            <Route path="/terms" element={<Navigate to="/legal/terms" replace />} />
+            <Route path="/privacy" element={<Navigate to="/legal/privacy" replace />} />
+            <Route path="/sell" element={<Sell />} />
+            <Route path="/seller" element={<SellerDashboard />} />
+            <Route path="/stores" element={<Stores />} />
+            <Route path="/store/:id" element={<StorePage />} />
+            <Route path="/delivery" element={<Delivery />} />
+            <Route path="/logistics" element={<Navigate to="/delivery" replace />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/account" element={<Account />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </main>
+        <Footer />
+        <Toast />
+      </BrowserRouter>
+    </StoreProvider>
+  );
+}
