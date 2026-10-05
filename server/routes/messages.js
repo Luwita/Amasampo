@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireUser } from '../auth.js';
 import { HttpError, newId, parse } from '../http.js';
+import { isLive } from '../queries.js';
 import { messageSchema } from '../schemas.js';
 
 const PER_MINUTE = 20;
@@ -73,8 +74,8 @@ export function messageRoutes(db) {
   router.post('/', async (req, res) => {
     const { shopId, ...msg } = parse(messageSchema.extend({ shopId: z.string() }), req.body);
     if (shopId === req.user.shopId) throw new HttpError(400, "You can't message your own shop");
-    const [shop] = await db.query('SELECT id FROM shops WHERE id = $1', [shopId]);
-    if (!shop) throw new HttpError(404, 'Shop not found');
+    const [shop] = await db.query('SELECT * FROM shops WHERE id = $1', [shopId]);
+    if (!shop || !isLive(shop)) throw new HttpError(404, 'Shop not found');
     await checkRate(req.user);
     const id = await db.tx(async (t) => {
       const [row] = await t.query(

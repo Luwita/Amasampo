@@ -95,7 +95,7 @@ function Thread({ id, onChange }) {
         ))}
         <div ref={bottom} />
       </div>
-      <p className="safety-note">🔒 Pay through Amasampo checkout so your money is protected until delivery.</p>
+      <p className="safety-note">🔒 Pay through Zed Market checkout so your money is protected until delivery.</p>
       <form className="composer" onSubmit={send}>
         <textarea
           rows="2"
@@ -154,7 +154,7 @@ export default function Messages() {
                   {c.productName ?? ''}
                 </span>
                 <span className="conversation-last">
-                  {c.lastMessage}
+                  <span className="ellipsis">{c.lastMessage}</span>
                   {c.unread > 0 && <span className="badge-inline">{c.unread}</span>}
                 </span>
               </Link>

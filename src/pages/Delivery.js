@@ -23,7 +23,7 @@ export default function Delivery() {
     <div>
       <section className="page-hero logistics-hero">
         <div className="container">
-          <span className="hero-kicker">Delivery on Amasampo</span>
+          <span className="hero-kicker">Delivery on Zed Market</span>
           <h1>Delivered across Zambia by Zambian couriers</h1>
           <p>
             Every shop chooses the couriers it works with. At checkout you see each option with its price and delivery

@@ -1,4 +1,4 @@
-/* Amasampo service worker: makes the app installable and usable on weak or no connection.
+/* Zed Market service worker: makes the app installable and usable on weak or no connection.
  *  - App files (hashed JS/CSS) and product photos: served from cache first, they never change.
  *  - Pages: network first, falling back to the cached app when offline.
  *  - Public catalogue API (products, shops, reviews): network first, cached copy when offline.
@@ -6,8 +6,8 @@
  * Bump VERSION to clear old caches after changing this file.
  */
 const VERSION = 'v1';
-const APP_CACHE = `amasampo-app-${VERSION}`;
-const DATA_CACHE = `amasampo-data-${VERSION}`;
+const APP_CACHE = `zed-market-app-${VERSION}`;
+const DATA_CACHE = `zed-market-data-${VERSION}`;
 const DATA_LIMIT = 150; // cached API responses kept for offline browsing
 const SHELL = ['/', '/manifest.json', '/icon-192.png', '/favicon-32.png'];
 

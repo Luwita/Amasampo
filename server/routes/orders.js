@@ -4,7 +4,10 @@ import { OrderError, priceOrder } from '../../src/data/pricing.js';
 import { requireUser } from '../auth.js';
 import { HttpError, newId, newOrderId, parse } from '../http.js';
 import { toProduct, toShop } from '../mappers.js';
-import { loadOrders, myShopOrFail } from '../queries.js';
+import { getSettings } from '../settings.js';
+import { formatK } from '../../src/utils/format.js';
+import { notify, notifyBuyerOfOrder, notifyShopOwner } from '../notify.js';
+import { cancelShipment, isLive, loadOrders, myShopOrFail } from '../queries.js';
 import { orderQuoteSchema, orderSchema } from '../schemas.js';
 
 const PAYMENT_NAMES = {
@@ -30,7 +33,8 @@ async function loadCoupons(q, code, shopIds, buyerId, lock) {
     if (c.max_uses && c.uses >= c.max_uses) throw new OrderError(`${c.code} has been fully used`);
     const [used] = await q.query(
       `SELECT 1 FROM shipments s JOIN orders o ON o.id = s.order_id
-        WHERE o.buyer_id = $1 AND s.shop_id = $2 AND upper(s.coupon_code) = upper($3) LIMIT 1`,
+        WHERE o.buyer_id = $1 AND s.shop_id = $2 AND upper(s.coupon_code) = upper($3) AND s.status <> 'cancelled'
+        LIMIT 1`,
       [buyerId, c.shop_id, c.code],
     );
     if (used) throw new OrderError(`You have already used ${c.code}`);
@@ -50,7 +54,10 @@ async function priceForBuyer(q, user, body, lock) {
     ])
   ).map(toProduct);
   const shopIds = [...new Set(products.map((p) => p.shopId))];
-  const shops = (await q.query('SELECT * FROM shops WHERE id = ANY($1)', [shopIds])).map(toShop);
+  const shopRows = await q.query('SELECT * FROM shops WHERE id = ANY($1)', [shopIds]);
+  const closed = shopRows.find((r) => !isLive(r));
+  if (closed) throw new HttpError(409, `${closed.name} is not taking orders at the moment`);
+  const shops = shopRows.map(toShop);
 
   // Accepted, unexpired price requests of this buyer.
   const quoteIds = body.items.map((i) => i.quoteId).filter(Boolean);
@@ -65,6 +72,16 @@ async function priceForBuyer(q, user, body, lock) {
     quoteRows.map((r) => [r.id, { productId: r.product_id, qty: r.qty, price: Number(r.quoted_price) }]),
   );
 
+  // A Zed Market voucher of this buyer that is unused and unexpired.
+  let voucherRow = null;
+  if (body.voucherId) {
+    [voucherRow] = await q.query(
+      `SELECT * FROM vouchers WHERE id = $1 AND user_id = $2 AND used_order_id IS NULL AND expires_at > now() ${lockSql}`,
+      [body.voucherId, user.id]
+    );
+    if (!voucherRow) throw new HttpError(409, 'That voucher has been used or has expired');
+  }
+
   try {
     const { coupons, rows: couponRows } = await loadCoupons(q, body.coupon, shopIds, user.id, lock);
     const priced = priceOrder({
@@ -76,11 +93,37 @@ async function priceForBuyer(q, user, body, lock) {
       payment: body.payment,
       coupons,
       quotes,
+      voucher: voucherRow && { amount: Number(voucherRow.amount), minSpend: Number(voucherRow.min_spend) },
+      pickupPoint: body.pickupPoint,
     });
-    return { priced, couponRows };
+    return { priced, couponRows, voucherRow };
   } catch (err) {
     if (err instanceof OrderError) throw new HttpError(409, err.message);
     throw err;
+  }
+}
+
+// When an invited buyer's first parcel is delivered, the friend who invited them gets a reward voucher (once).
+async function rewardInviter(t, orderId) {
+  const [buyer] = await t.query(
+    'SELECT u.id, u.name, u.referred_by FROM orders o JOIN users u ON u.id = o.buyer_id WHERE o.id = $1',
+    [orderId]
+  );
+  if (!buyer?.referred_by) return;
+  const { referralReward, voucherMinSpend, voucherDays } = await getSettings(t);
+  const rows = await t.query(
+    `INSERT INTO vouchers (id, user_id, amount, min_spend, reason, related_user_id, expires_at)
+     VALUES ($1, $2, $3, $4, 'referral', $5, now() + make_interval(days => $6))
+     ON CONFLICT (user_id, related_user_id) WHERE reason = 'referral' DO NOTHING RETURNING id`,
+    [newId('vch'), buyer.referred_by, referralReward, voucherMinSpend, buyer.id, voucherDays]
+  );
+  if (rows.length) {
+    await notify(t, buyer.referred_by, {
+      kind: 'voucher',
+      title: `You earned K${referralReward}!`,
+      body: `${buyer.name.split(' ')[0]} got their first order. Here's a voucher for your next one.`,
+      link: '/account?tab=invite',
+    });
   }
 }
 
@@ -99,15 +142,15 @@ export function orderRoutes(db) {
 
     const order = await db.tx(async (t) => {
       // Lock products, codes and agreed prices so two buyers can't take the last item or the last code use.
-      const { priced, couponRows } = await priceForBuyer(t, req.user, body, true);
+      const { priced, couponRows, voucherRow } = await priceForBuyer(t, req.user, body, true);
 
       const id = newOrderId();
       // Mobile Money and card payments are not connected yet, so they are recorded as paid.
       const paymentStatus = body.payment === 'cod' ? 'cod_due' : 'paid';
       const [row] = await t.query(
         `INSERT INTO orders (id, buyer_id, buyer_name, buyer_phone, province, town, address, payment_method,
-                             payment_status, subtotal, discount, delivery, total)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+                             payment_status, subtotal, discount, delivery, total, voucher_id, voucher_discount)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
         [
           id,
           req.user.id,
@@ -122,15 +165,41 @@ export function orderRoutes(db) {
           priced.discount,
           priced.delivery,
           priced.total,
+          voucherRow?.id ?? null,
+          priced.voucherDiscount,
         ],
       );
+      if (voucherRow) await t.query('UPDATE vouchers SET used_order_id = $2 WHERE id = $1', [voucherRow.id, id]);
+      const { commissionRate } = await getSettings(t);
       for (const s of priced.shipments) {
         const shipmentId = newId('shp');
         await t.query(
-          `INSERT INTO shipments (id, order_id, shop_id, courier, courier_name, fee, eta, subtotal, discount, coupon_code)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [shipmentId, id, s.shopId, s.courier, s.courierName, s.fee, s.eta, s.subtotal, s.discount, s.couponCode],
+          `INSERT INTO shipments (id, order_id, shop_id, courier, courier_name, fee, eta, subtotal, discount, coupon_code,
+                                  voucher_discount, pickup_point, commission_rate)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            shipmentId,
+            id,
+            s.shopId,
+            s.courier,
+            s.courierName,
+            s.fee,
+            s.eta,
+            s.subtotal,
+            s.discount,
+            s.couponCode,
+            s.voucherDiscount,
+            s.pickupPoint,
+            commissionRate,
+          ],
         );
+        const units = s.items.reduce((n, i) => n + i.qty, 0);
+        await notifyShopOwner(t, s.shopId, {
+          kind: 'order',
+          title: `New order ${id}`,
+          body: `${units} item${units > 1 ? 's' : ''} worth ${formatK(s.subtotal - s.discount)} for ${body.shipping.town}. Please send it soon.`,
+          link: '/seller?tab=orders',
+        });
         for (const item of s.items) {
           await t.query(
             `INSERT INTO order_items (id, shipment_id, product_id, name, options, qty, unit_price, price_request_id)
@@ -154,6 +223,18 @@ export function orderRoutes(db) {
     res.status(201).json(full);
   });
 
+  // The buyer, or the shop (e.g. out of stock), cancels a parcel that hasn't been sent yet.
+  router.post('/:orderId/shipments/:shopId/cancel', async (req, res) => {
+    const { reason } = parse(z.object({ reason: z.string().trim().min(2, 'Tell us why').max(300) }), req.body);
+    const [order] = await db.query('SELECT * FROM orders WHERE id = $1', [req.params.orderId]);
+    if (!order) throw new HttpError(404, 'Order not found');
+    const by = order.buyer_id === req.user.id ? 'buyer' : req.user.shopId === req.params.shopId ? 'seller' : null;
+    if (!by) throw new HttpError(404, 'Order not found');
+    const result = await db.tx((t) => cancelShipment(t, order.id, req.params.shopId, by, reason));
+    const [full] = await loadOrders(db, [order], by === 'seller' ? req.params.shopId : null);
+    res.json({ order: full, refund: result.refund });
+  });
+
   router.get('/mine', async (req, res) => {
     const rows = await db.query('SELECT * FROM orders WHERE buyer_id = $1 ORDER BY created_at DESC', [req.user.id]);
     res.json(await loadOrders(db, rows));
@@ -173,27 +254,54 @@ export function orderRoutes(db) {
   router.patch('/:orderId/shipments/:shopId', async (req, res) => {
     const shop = await myShopOrFail(db, req.user);
     if (shop.id !== req.params.shopId) throw new HttpError(403, 'You can only update your own parcels');
-    const body = parse(
-      z.object({ status: z.enum(['dispatched', 'delivered']), tracking: z.string().trim().max(60).optional() }),
-      req.body,
-    );
-    const [current] = await db.query('SELECT status FROM shipments WHERE order_id = $1 AND shop_id = $2', [
-      req.params.orderId,
-      shop.id,
-    ]);
-    if (!current) throw new HttpError(404, 'Order not found');
-    if (SHIPMENT_FLOW[current.status] !== body.status) {
-      throw new HttpError(409, `A ${current.status} parcel can't be marked ${body.status}`);
-    }
-    await db.query(
-      `UPDATE shipments SET status = $3, tracking = COALESCE($4, tracking), updated_at = now()
-        WHERE order_id = $1 AND shop_id = $2`,
-      [req.params.orderId, shop.id, body.status, body.tracking ?? null],
-    );
+    await advanceShipment(db, req.params.orderId, shop, parse(shipmentUpdateSchema, req.body));
     const [order] = await db.query('SELECT * FROM orders WHERE id = $1', [req.params.orderId]);
     const [full] = await loadOrders(db, [order], shop.id);
     res.json(full);
   });
 
   return router;
+}
+
+export const shipmentUpdateSchema = z.object({
+  status: z.enum(['dispatched', 'delivered']),
+  tracking: z.string().trim().max(60).optional(),
+});
+
+// Moves a parcel to its next status and tells the buyer. Used by the shop, and by staff on the shop's behalf.
+export async function advanceShipment(db, orderId, shop, body) {
+  const [current] = await db.query('SELECT status FROM shipments WHERE order_id = $1 AND shop_id = $2', [
+    orderId,
+    shop.id,
+  ]);
+  if (!current) throw new HttpError(404, 'Order not found');
+  if (SHIPMENT_FLOW[current.status] !== body.status) {
+    throw new HttpError(409, `A ${current.status} parcel can't be marked ${body.status}`);
+  }
+  await db.tx(async (t) => {
+    const [s] = await t.query(
+      `UPDATE shipments SET status = $3, tracking = COALESCE($4, tracking), updated_at = now(),
+              delivered_at = CASE WHEN $3 = 'delivered' THEN now() ELSE delivered_at END
+        WHERE order_id = $1 AND shop_id = $2 RETURNING *`,
+      [orderId, shop.id, body.status, body.tracking ?? null]
+    );
+    const pickupHere = s.courier === 'pickup';
+    await notifyBuyerOfOrder(t, orderId, {
+      kind: 'order',
+      title:
+        body.status === 'delivered'
+          ? `Delivered: your order from ${shop.name}`
+          : pickupHere
+            ? `Ready to collect at ${shop.name}`
+            : s.courier === 'point'
+              ? `On its way to your Zed Market Point`
+              : `On its way: your order from ${shop.name}`,
+      body:
+        body.status === 'delivered'
+          ? 'Happy with it? Rate your items. Something wrong? You can report a problem within 7 days.'
+          : [s.courier_name, s.tracking && `tracking ${s.tracking}`, s.pickup_point].filter(Boolean).join(' · '),
+      link: '/account',
+    });
+    if (body.status === 'delivered') await rewardInviter(t, orderId);
+  });
 }

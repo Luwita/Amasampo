@@ -25,7 +25,13 @@ export const toShop = (row) => ({
   rating: num(row.rating),
   reviewCount: row.review_count ?? 0,
   productCount: row.product_count ?? null,
+  verified: row.verification === 'verified',
+  verification: row.verification ?? 'unverified',
+  suspended: !!row.suspended_at,
   tpin: row.tpin ?? null,
+  banner: row.banner ?? null,
+  about: row.about ?? null,
+  openingHours: row.opening_hours ?? null,
   vatRegistered: row.vat_registered ?? false,
   since: row.since,
 });
@@ -51,6 +57,7 @@ export const toProduct = (row) => ({
   options: row.options ?? [],
   lowStockAt: row.low_stock_at ?? 5,
   featuredUntil: row.featured_until ?? null,
+  sourceProductId: row.source_product_id ?? null,
   createdAt: row.created_at,
 });
 
@@ -65,6 +72,7 @@ export const toOrder = (order, shipments) => ({
   paymentStatus: order.payment_status,
   subtotal: num(order.subtotal),
   discount: num(order.discount) ?? 0,
+  voucherDiscount: num(order.voucher_discount) ?? 0,
   delivery: num(order.delivery),
   total: num(order.total),
   shipments: shipments.map((s) => ({
@@ -89,12 +97,20 @@ export const toOrder = (order, shipments) => ({
     subtotal: num(s.subtotal),
     discount: num(s.discount) ?? 0,
     couponCode: s.coupon_code,
+    voucherDiscount: num(s.voucher_discount) ?? 0,
+    pickupPoint: s.pickup_point ?? null,
     courier: s.courier,
     courierName: s.courier_name,
     fee: num(s.fee),
     eta: s.eta,
     status: s.status,
     tracking: s.tracking,
+    deliveredAt: s.delivered_at ?? null,
+    cancelledBy: s.cancelled_by ?? null,
+    cancelReason: s.cancel_reason ?? null,
+    latestCase: s.latest_case ?? null,
+    refunded: num(s.refunded) ?? 0,
+    refundsPaid: s.refunds_paid ?? null,
   })),
 });
 

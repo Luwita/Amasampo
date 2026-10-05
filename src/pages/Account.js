@@ -1,15 +1,92 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import * as api from '../api';
+import { CancelParcel, RETURN_DAYS, ReportProblem } from '../components/Cases';
 import { BuyerPriceRequests } from '../components/PriceRequests';
 import ProductCard from '../components/ProductCard';
+import ShareButton from '../components/ShareButton';
 import ShipmentStatus from '../components/ShipmentStatus';
 import Stars from '../components/Stars';
 import { useStore } from '../context/StoreContext';
+import { REFERRAL_REWARD, VOUCHER_MIN_SPEND as MIN_SPEND, WELCOME_VOUCHER as WELCOME } from '../data/fees';
 import { formatLocation } from '../data/zambia';
 import { formatK } from '../utils/format';
 
+const shortDate = (d) => new Date(d).toLocaleDateString('en-ZM', { dateStyle: 'medium' });
+
+// Invite friends: they get a voucher when they join, the inviter gets one when their first order arrives.
+function InvitePanel() {
+  const [referral, setReferral] = useState(null);
+  const [vouchers, setVouchers] = useState([]);
+  const [amounts, setAmounts] = useState({ welcomeVoucher: WELCOME, referralReward: REFERRAL_REWARD, voucherMinSpend: MIN_SPEND });
+  useEffect(() => {
+    api.settings().then(setAmounts).catch(() => {});
+    api.myReferral().then(setReferral).catch(() => {});
+    api.myVouchers().then(setVouchers).catch(() => {});
+  }, []);
+  if (!referral) return <p className="muted">Loading…</p>;
+  const link = `/login?ref=${referral.code}`;
+  return (
+    <div className="invite-layout">
+      <section className="card form-card invite-card">
+        <h2>Invite friends, get {formatK(amounts.referralReward)}</h2>
+        <p className="muted">
+          Your friend gets a {formatK(amounts.welcomeVoucher)} voucher when they join with your code. You get {formatK(amounts.referralReward)} when their
+          first order is delivered. Vouchers work on orders over {formatK(amounts.voucherMinSpend)}.
+        </p>
+        <div className="invite-code">{referral.code}</div>
+        <ShareButton
+          title="Join Zed Market"
+          text={`Shop from local shops across Zambia on Zed Market. Use my code ${referral.code} for ${formatK(amounts.welcomeVoucher)} off.`}
+          path={link}
+          label="↗ Share my invite"
+        />
+        <p className="small muted">
+          {referral.invited} friend{referral.invited === 1 ? '' : 's'} joined · {referral.rewarded} reward
+          {referral.rewarded === 1 ? '' : 's'} earned
+        </p>
+      </section>
+      <section className="card form-card">
+        <h2>My vouchers</h2>
+        {vouchers.length ? (
+          <ul className="voucher-list">
+            {vouchers.map((v) => (
+              <li key={v.id} className={v.usable ? '' : 'used'}>
+                <strong>{formatK(v.amount)}</strong>
+                <span className="grow small">
+                  {v.reason === 'welcome' ? 'Welcome gift' : v.reason === 'referral' ? 'Thanks for inviting a friend' : v.note}
+                  <span className="block muted">
+                    Orders over {formatK(v.minSpend)} ·{' '}
+                    {v.usedOrderId ? `used on ${v.usedOrderId}` : v.usable ? `use by ${shortDate(v.expiresAt)}` : 'expired'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">No vouchers yet. Invite a friend to get one.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
 const roleLabel = { business: 'Business buyer', seller: 'Shop owner', buyer: 'Shopper' };
+
+// What a buyer can do with a parcel: cancel before it is sent, or report a problem afterwards.
+function ParcelActions({ order, shipment }) {
+  if (shipment.status === 'pending') {
+    return <CancelParcel orderId={order.id} shopId={shipment.shopId} role="buyer" paid={order.paid} />;
+  }
+  const activeCase = shipment.latestCase && ['open', 'rejected', 'escalated'].includes(shipment.latestCase.status);
+  const inWindow =
+    shipment.status === 'dispatched' ||
+    (shipment.status === 'delivered' &&
+      shipment.deliveredAt &&
+      new Date(shipment.deliveredAt) > new Date(Date.now() - RETURN_DAYS * 864e5));
+  if (activeCase || !inWindow) return null;
+  return <ReportProblem order={order} shipment={shipment} />;
+}
 
 // The buyer's rights under the Data Protection Act: a copy of their data, and deleting the account.
 function PrivacyPanel() {
@@ -25,7 +102,7 @@ function PrivacyPanel() {
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'amasampo-my-data.json';
+      a.download = 'zed-market-my-data.json';
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
@@ -49,7 +126,7 @@ function PrivacyPanel() {
     <div className="card form-card narrow-card">
       <h2>Your data</h2>
       <p className="muted">
-        Download a copy of everything Amasampo holds about you: profile, orders, reviews, messages and price requests.
+        Download a copy of everything Zed Market holds about you: profile, orders, reviews, messages and price requests.
         See our <Link to="/legal/privacy">privacy policy</Link>.
       </p>
       <button className="btn btn-outline" onClick={download}>
@@ -59,7 +136,7 @@ function PrivacyPanel() {
       <h2 className="danger-title">Delete my account</h2>
       {myShop ? (
         <p className="muted">
-          You own {myShop.name}. Contact support@amasampo.co.zm to close your shop before deleting your account.
+          You own {myShop.name}. Contact support@zedmarket.co.zm to close your shop before deleting your account.
         </p>
       ) : (
         <>
@@ -148,13 +225,13 @@ function OrderItem({ orderId, item, delivered }) {
 }
 
 export default function Account() {
-  const { user, logout, orders, wishlist, getProduct, myShop, location } = useStore();
+  const { user, logout, orders, wishlist, getProduct, myShop, location, buyAgain, notify } = useStore();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const tab = params.get('tab') ?? 'orders';
   const saved = wishlist.map(getProduct).filter(Boolean);
   const myOrders = user ? orders : [];
-  const needsShop = user?.accountType === 'seller' && !myShop;
+  const needsShop = user?.accountType === 'seller' && !myShop && !user?.isAdmin;
 
   return (
     <div className="container section">
@@ -162,10 +239,16 @@ export default function Account() {
         <div>
           <h1>{user ? `Muli shani, ${user.name.split(' ')[0]}` : 'My account'}</h1>
           <p className="muted">
-            {user && `${user.phone} · ${roleLabel[user.accountType] ?? 'Shopper'} · `}📍 {formatLocation(location)}
+            {user &&
+              `${user.phone} · ${user.isAdmin ? (user.staffRole === 'owner' ? 'Zed Market owner' : 'Zed Market staff') : (roleLabel[user.accountType] ?? 'Shopper')} · `}📍 {formatLocation(location)}
           </p>
         </div>
         <div className="pdp-buttons">
+          {user?.isAdmin && (
+            <Link to="/admin" className="btn btn-primary">
+              🛡 Admin panel
+            </Link>
+          )}
           {myShop && (
             <Link to="/seller" className="btn btn-primary">
               🏪 {myShop.name} dashboard
@@ -204,7 +287,7 @@ export default function Account() {
         </div>
       )}
 
-      <div className="tabs">
+      <div className="tabs tabs-scroll">
         <button className={tab === 'orders' ? 'on' : ''} onClick={() => setParams({ tab: 'orders' })}>
           Orders ({myOrders.length})
         </button>
@@ -215,6 +298,9 @@ export default function Account() {
           <>
             <button className={tab === 'quotes' ? 'on' : ''} onClick={() => setParams({ tab: 'quotes' })}>
               Price requests
+            </button>
+            <button className={tab === 'invite' ? 'on' : ''} onClick={() => setParams({ tab: 'invite' })}>
+              🎁 Invite & vouchers
             </button>
             <button className={tab === 'privacy' ? 'on' : ''} onClick={() => setParams({ tab: 'privacy' })}>
               Privacy & data
@@ -237,7 +323,17 @@ export default function Account() {
                     <strong>{formatK(o.total)}</strong>{' '}
                     <Link to={`/order/${o.id}/receipt`} className="link small">
                       Receipt
-                    </Link>
+                    </Link>{' '}
+                    <button
+                      className="link-btn small"
+                      onClick={() => {
+                        buyAgain(o);
+                        notify('Added to your cart');
+                        navigate('/cart');
+                      }}
+                    >
+                      Buy again
+                    </button>
                   </span>
                 </div>
                 {o.shipments.map((s) => (
@@ -254,6 +350,8 @@ export default function Account() {
                       ))}
                     </ul>
                     <ShipmentStatus shipment={s} />
+                    {s.pickupPoint && <p className="small muted">📮 Collect from {s.pickupPoint}</p>}
+                    <ParcelActions order={o} shipment={s} />
                   </div>
                 ))}
               </div>
@@ -270,6 +368,7 @@ export default function Account() {
 
       {tab === 'quotes' && user && <BuyerPriceRequests />}
       {tab === 'privacy' && user && <PrivacyPanel />}
+      {tab === 'invite' && user && <InvitePanel />}
 
       {tab === 'wishlist' &&
         (saved.length ? (

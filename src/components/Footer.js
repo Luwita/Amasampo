@@ -3,15 +3,15 @@ import { useStore } from '../context/StoreContext';
 import { provinces } from '../data/zambia';
 
 export default function Footer() {
-  const { lowData, setLowData, canInstall, install } = useStore();
+  const { lowData, setLowData, canInstall, install, user } = useStore();
   return (
     <footer className="site-footer">
       <div className="container footer-grid">
         <div>
           <div className="logo logo-light">
-            <span className="logo-mark">A</span>
+            <span className="logo-mark">Z</span>
             <span className="logo-text">
-              ama<strong>sampo</strong>
+              zed<strong>market</strong>
             </span>
           </div>
           <p className="muted-light">
@@ -35,8 +35,14 @@ export default function Footer() {
         </div>
         <div>
           <h4>Sell</h4>
-          <Link to="/sell">Open a shop</Link>
-          <Link to="/seller">Seller dashboard</Link>
+          {user?.isAdmin ? (
+            <Link to="/admin">Admin panel</Link>
+          ) : (
+            <>
+              <Link to="/sell">Open a shop</Link>
+              <Link to="/seller">Seller dashboard</Link>
+            </>
+          )}
           <Link to="/delivery">Delivery partners</Link>
           <Link to="/wholesale">Wholesale</Link>
         </div>
@@ -45,7 +51,7 @@ export default function Footer() {
           <Link to="/account">My orders</Link>
           <Link to="/legal/returns">Returns & refunds</Link>
           <Link to="/stores">Find a shop</Link>
-          <a href="mailto:support@amasampo.co.zm">support@amasampo.co.zm</a>
+          <a href="mailto:support@zedmarket.co.zm">support@zedmarket.co.zm</a>
           <a href="tel:+260211000000">+260 211 000 000</a>
           <span className="muted-light">Cairo Road, Lusaka</span>
         </div>
@@ -57,12 +63,12 @@ export default function Footer() {
         </label>
         {canInstall && (
           <button className="btn btn-light btn-sm" onClick={install}>
-            📲 Install Amasampo on this phone
+            📲 Install Zed Market on this phone
           </button>
         )}
       </div>
       <div className="container footer-bottom">
-        <span>© {new Date().getFullYear()} Amasampo Zambia. All prices in Zambian Kwacha (ZMW).</span>
+        <span>© {new Date().getFullYear()} Zed Market Zambia. All prices in Zambian Kwacha (ZMW).</span>
         <span className="footer-legal">
           <Link to="/legal/terms">Terms</Link>
           <Link to="/legal/privacy">Privacy</Link>

@@ -38,12 +38,12 @@ export function Receipt() {
         <header className="document-head">
           <div>
             <div className="logo">
-              <span className="logo-mark">A</span>
+              <span className="logo-mark">Z</span>
               <span className="logo-text">
-                ama<strong>sampo</strong>
+                zed<strong>market</strong>
               </span>
             </div>
-            <p className="muted small">Cairo Road, Lusaka · support@amasampo.co.zm</p>
+            <p className="muted small">Cairo Road, Lusaka · support@zedmarket.co.zm</p>
           </div>
           <div className="document-meta">
             <h1>Receipt</h1>
@@ -133,8 +133,8 @@ export function Receipt() {
           <span>{formatK(order.total)}</span>
         </div>
         <p className="muted small document-note">
-          This receipt is issued by Amasampo on behalf of the shops named above. It is not a ZRA Smart Invoice; ask the
-          shop if you need a tax invoice for your business.
+          This receipt is issued by Zed Market on behalf of the shops named above. It is not a ZRA Smart Invoice; ask
+          the shop if you need a tax invoice for your business.
         </p>
       </article>
     </div>
@@ -182,9 +182,9 @@ export function Statement() {
         <header className="document-head">
           <div>
             <div className="logo">
-              <span className="logo-mark">A</span>
+              <span className="logo-mark">Z</span>
               <span className="logo-text">
-                ama<strong>sampo</strong>
+                zed<strong>market</strong>
               </span>
             </div>
             <p className="muted small">Seller statement</p>
@@ -207,7 +207,8 @@ export function Statement() {
                   <th className="num">Discount</th>
                   <th className="num">Delivery</th>
                   <th className="num">Commission</th>
-                  <th className="num">You receive</th>
+                  <th className="num">Cash you collected</th>
+                  <th className="num">From Zed Market</th>
                 </tr>
               </thead>
               <tbody>
@@ -218,8 +219,14 @@ export function Statement() {
                     <td className="num">{formatK(l.subtotal)}</td>
                     <td className="num">{l.discount ? `−${formatK(l.discount)}` : '—'}</td>
                     <td className="num">{formatK(l.delivery)}</td>
-                    <td className="num">−{formatK(l.commission)}</td>
-                    <td className="num">{formatK(l.payout)}</td>
+                    <td className="num">
+                      −{formatK(l.commission)}
+                      {l.commissionRate !== data.commissionRate && (
+                        <span className="block small muted">{Math.round(l.commissionRate * 1000) / 10}%</span>
+                      )}
+                    </td>
+                    <td className="num">{l.cashOnDelivery ? formatK(l.cashCollected) : '—'}</td>
+                    <td className={`num ${l.payout < 0 ? 'error' : ''}`}>{formatK(l.payout)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -230,6 +237,7 @@ export function Statement() {
                   <td className="num">−{formatK(data.totals.discount)}</td>
                   <td className="num">{formatK(data.totals.delivery)}</td>
                   <td className="num">−{formatK(data.totals.commission)}</td>
+                  <td className="num">{data.totals.cashCollected ? formatK(data.totals.cashCollected) : '—'}</td>
                   <td className="num">{formatK(data.totals.payout)}</td>
                 </tr>
               </tfoot>
@@ -239,8 +247,12 @@ export function Statement() {
           <p className="muted">No parcels were delivered in {label}.</p>
         )}
         <p className="muted small document-note">
-          Commission is {Math.round(data.commissionRate * 100)}% of the goods value after discounts; delivery fees are
-          passed to you in full. Only parcels marked delivered in this month are included.
+          Commission is a percentage of the goods value after your discounts, at the rate in force when the order was
+          placed (now {Math.round(data.commissionRate * 1000) / 10}%). Delivery fees are passed to you in full. For
+          orders paid online, Zed Market pays you the goods and delivery minus commission. For cash on delivery you
+          already collected the cash, so Zed Market pays back any Zed Market voucher the buyer used, minus the
+          commission; a negative amount is commission you owe. Return refunds after delivery come off the total. Only
+          parcels marked delivered in this month are included.
         </p>
       </article>
     </div>

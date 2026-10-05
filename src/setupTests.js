@@ -17,3 +17,8 @@ beforeEach(() => {
   require('./api').__reset();
   localStorage.clear();
 });
+
+// Whole-app tests render the full site; on a busy machine (e.g. with the dev server running) a page can take
+// more than Testing Library's 1 s default to appear, so allow longer before a query gives up.
+require('@testing-library/react').configure({ asyncUtilTimeout: 5000 });
+jest.setTimeout(30000);

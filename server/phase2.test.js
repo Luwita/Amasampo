@@ -17,7 +17,7 @@ before(async () => {
   db = await createDb({ url: '', dataDir: '' });
   await migrate(db);
   await seedIfEmpty(db);
-  uploadDir = await mkdtemp(path.join(tmpdir(), 'amasampo-p2-'));
+  uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-p2-'));
   server = createApp(db, { uploadDir, sms: { send: async (phone, message) => sent.push({ phone, message }) } }).listen(
     0,
   );
@@ -110,6 +110,8 @@ describe('weights, options, reviews and seller tools', () => {
       '/api/shops',
       {
         name: 'Mwila Traders',
+        ownerFullName: 'Mwila Phiri',
+        nrc: '234567/89/1',
         phone: '0977300300',
         province: 'lusaka',
         town: 'Lusaka',
@@ -119,6 +121,7 @@ describe('weights, options, reviews and seller tools', () => {
       seller.token,
     );
     seller.shopId = shop.body.id;
+    await db.query(`UPDATE shops SET verification = 'verified' WHERE id = $1`, [seller.shopId]);
     const shirt = await api(
       'POST',
       '/api/products',

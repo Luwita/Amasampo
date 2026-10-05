@@ -47,7 +47,7 @@ function LocationButton() {
 }
 
 export default function Header() {
-  const { cartCount, user, wishlist, location, myShop, unreadMessages, canInstall, install } = useStore();
+  const { cartCount, user, wishlist, location, myShop, unreadMessages, notificationCount, toDispatchCount, canInstall, install } = useStore();
   const [params] = useSearchParams();
   const [query, setQuery] = useState(params.get('q') ?? '');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -66,14 +66,20 @@ export default function Header() {
         <div className="container topbar-inner">
           <span>🇿🇲 Local shops in all 10 provinces · Pay in Kwacha · Delivered by Zambian couriers</span>
           <span className="topbar-links">
-            {myShop ? <Link to="/seller">My shop dashboard</Link> : <Link to="/sell">Open a shop</Link>}
+            {user?.isAdmin ? (
+              <Link to="/admin">🛡 Admin panel</Link>
+            ) : myShop ? (
+              <Link to="/seller">My shop dashboard</Link>
+            ) : (
+              <Link to="/sell">Open a shop</Link>
+            )}
             <Link to="/delivery">Delivery & couriers</Link>
             {canInstall && (
               <button className="link-btn topbar-btn" onClick={install}>
                 📲 Install app
               </button>
             )}
-            <a href="tel:+260211000000">Help: +260 211 000 000</a>
+            <Link to="/help">Help & support</Link>
           </span>
         </div>
       </div>
@@ -82,10 +88,10 @@ export default function Header() {
         <button className="icon-btn menu-btn" aria-label="Categories" onClick={() => setMenuOpen((o) => !o)}>
           ☰
         </button>
-        <Link to="/" className="logo" aria-label="Amasampo home">
-          <span className="logo-mark">A</span>
+        <Link to="/" className="logo" aria-label="Zed Market home">
+          <span className="logo-mark">Z</span>
           <span className="logo-text">
-            ama<strong>sampo</strong>
+            zed<strong>market</strong>
           </span>
         </Link>
 
@@ -103,10 +109,17 @@ export default function Header() {
         </form>
 
         <nav className="header-actions">
-          {(myShop || user?.accountType === 'seller') && (
+          {!user?.isAdmin && (myShop || user?.accountType === 'seller') && (
             <Link to={myShop ? '/seller' : '/sell#register'} className="action">
               <span className="action-icon">🏪</span>
               <span className="action-label">{myShop ? 'My shop' : 'Set up shop'}</span>
+              {toDispatchCount > 0 && <span className="badge-count" title="Parcels to send">{toDispatchCount}</span>}
+            </Link>
+          )}
+          {user?.isAdmin && (
+            <Link to="/admin" className="action">
+              <span className="action-icon">🛡</span>
+              <span className="action-label">Admin</span>
             </Link>
           )}
           {user && (
@@ -116,11 +129,18 @@ export default function Header() {
               {unreadMessages > 0 && <span className="badge-count">{unreadMessages}</span>}
             </Link>
           )}
+          {user && (
+            <Link to="/notifications" className="action">
+              <span className="action-icon">🔔</span>
+              <span className="action-label">Alerts</span>
+              {notificationCount > 0 && <span className="badge-count">{notificationCount}</span>}
+            </Link>
+          )}
           <Link to={user ? '/account' : '/login'} className="action">
             <span className="action-icon">👤</span>
             <span className="action-label">{user ? user.name.split(' ')[0] : 'Sign in'}</span>
           </Link>
-          <Link to="/account?tab=wishlist" className="action">
+          <Link to="/account?tab=wishlist" className="action action-saved">
             <span className="action-icon">♡</span>
             <span className="action-label">Saved</span>
             {wishlist.length > 0 && <span className="badge-count">{wishlist.length}</span>}
@@ -142,8 +162,9 @@ export default function Header() {
           <Link to={`/shop?prov=${location.province}`}>{getProvince(location.province)?.name} Province</Link>
           <NavLink to="/stores">Shops</NavLink>
           <NavLink to="/wholesale">Wholesale</NavLink>
+          <NavLink to="/requests">Buying requests</NavLink>
           <Link to="/shop?sort=deals">Flash deals</Link>
-          {categories.slice(0, 6).map((c) => (
+          {categories.map((c) => (
             <Link key={c.id} to={`/shop?cat=${c.id}`}>
               {c.name}
             </Link>

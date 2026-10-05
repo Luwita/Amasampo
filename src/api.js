@@ -1,5 +1,5 @@
-// Thin client for the Amasampo API. In development, CRA proxies /api to the server on port 4000.
-const TOKEN_KEY = 'amasampo.token';
+// Thin client for the Zed Market API. In development, CRA proxies /api to the server on port 4000.
+const TOKEN_KEY = 'zedmarket.token';
 
 export function getToken() {
   try {
@@ -39,7 +39,7 @@ async function request(method, path, body) {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new ApiError(0, "Can't reach Amasampo. Check your internet connection.");
+    throw new ApiError(0, "Can't reach Zed Market. Check your internet connection.");
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -112,3 +112,105 @@ export const acceptPriceRequest = (id) => request('PATCH', `/price-requests/${id
 export const sellerStatement = (month) => request('GET', `/seller/statement?month=${month}`);
 export const exportMyData = () => request('GET', '/me/export');
 export const deleteAccount = () => request('DELETE', '/me');
+
+// ----- Cancellations, returns and disputes -----
+export const cancelShipment = (orderId, shopId, reason) =>
+  request('POST', `/orders/${orderId}/shipments/${shopId}/cancel`, { reason });
+export const openCase = (body) => request('POST', '/cases', body);
+export const myCases = () => request('GET', '/cases/mine');
+export const shopCases = () => request('GET', '/cases/shop');
+export const getCase = (id) => request('GET', `/cases/${id}`);
+export const respondToCase = (id, body) => request('PATCH', `/cases/${id}/respond`, body);
+export const escalateCase = (id, note) => request('PATCH', `/cases/${id}/escalate`, { note });
+export const withdrawCase = (id) => request('PATCH', `/cases/${id}/withdraw`);
+
+// ----- Shop verification -----
+export const sellerVerification = () => request('GET', '/seller/verification');
+export const submitVerification = (body) => request('POST', '/seller/verification', body);
+export const removedProducts = () => request('GET', '/seller/removed-products');
+
+// ----- Staff (admin) -----
+const qs = (params = {}) =>
+  new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString();
+export const admin = {
+  stats: () => request('GET', '/admin/stats'),
+  shops: (params) => request('GET', `/admin/shops?${qs(params)}`),
+  verifyShop: (id, status, note) => request('PATCH', `/admin/shops/${id}/verification`, { status, note }),
+  suspendShop: (id, suspended, reason) => request('PATCH', `/admin/shops/${id}/suspension`, { suspended, reason }),
+  products: (params) => request('GET', `/admin/products?${qs(params)}`),
+  removeProduct: (id, reason) => request('POST', `/admin/products/${id}/remove`, { reason }),
+  restoreProduct: (id) => request('POST', `/admin/products/${id}/restore`),
+  reviews: (params) => request('GET', `/admin/reviews?${qs(params)}`),
+  removeReview: (id, reason) => request('DELETE', `/admin/reviews/${id}`, { reason }),
+  users: (params) => request('GET', `/admin/users?${qs(params)}`),
+  suspendUser: (id, suspended, reason) => request('PATCH', `/admin/users/${id}/suspension`, { suspended, reason }),
+  orders: (params) => request('GET', `/admin/orders?${qs(params)}`),
+  cancelShipment: (orderId, shopId, reason) =>
+    request('POST', `/admin/orders/${orderId}/shipments/${shopId}/cancel`, { reason }),
+  cases: (params) => request('GET', `/admin/cases?${qs(params)}`),
+  decideCase: (id, body) => request('PATCH', `/admin/cases/${id}/decide`, body),
+  refunds: (params) => request('GET', `/admin/refunds?${qs(params)}`),
+  markRefundPaid: (id, reference) => request('PATCH', `/admin/refunds/${id}/paid`, { reference }),
+  actions: () => request('GET', '/admin/actions'),
+  analytics: (days) => request('GET', `/admin/analytics?days=${days}`),
+  payouts: () => request('GET', '/admin/payouts'),
+  payoutHistory: (shopId) => request('GET', `/admin/payouts/history?${qs({ shopId })}`),
+  pay: (body) => request('POST', '/admin/payouts', body),
+  banners: () => request('GET', '/admin/banners'),
+  createBanner: (body) => request('POST', '/admin/banners', body),
+  updateBanner: (id, body) => request('PATCH', `/admin/banners/${id}`, body),
+  deleteBanner: (id) => request('DELETE', `/admin/banners/${id}`),
+  campaigns: () => request('GET', '/admin/campaigns'),
+  createCampaign: (body) => request('POST', '/admin/campaigns', body),
+  announcements: () => request('GET', '/admin/announcements'),
+  announce: (body) => request('POST', '/admin/announcements', body),
+  requests: (params) => request('GET', `/admin/requests?${qs(params)}`),
+  staff: () => request('GET', '/admin/staff'),
+  addStaff: (body) => request('POST', '/admin/staff', body),
+  removeStaff: (id) => request('DELETE', `/admin/staff/${id}`),
+  settings: () => request('GET', '/admin/settings'),
+  saveSettings: (body) => request('PATCH', '/admin/settings', body),
+  shop: (id) => request('GET', `/admin/shops/${id}`),
+  editShop: (id, body) => request('PUT', `/admin/shops/${id}`, body),
+  editProduct: (id, body) => request('PUT', `/admin/products/${id}`, body),
+  setParcelStatus: (orderId, shopId, body) => request('PATCH', `/admin/orders/${orderId}/shipments/${shopId}/status`, body),
+  removeRequest: (id, reason) => request('POST', `/admin/requests/${id}/remove`, { reason }),
+};
+
+// ----- Home page banners and seller payouts -----
+export const banners = () => request('GET', '/banners');
+export const settings = () => request('GET', '/settings');
+export const sellerPayouts = () => request('GET', '/seller/payouts');
+
+// ----- Notifications (the bell and red dots) -----
+export const notifications = () => request('GET', '/notifications');
+export const counts = () => request('GET', '/notifications/counts');
+export const markNotificationsRead = (ids) => request('POST', '/notifications/read', ids ? { ids } : {});
+
+// ----- Customer support -----
+export const supportTickets = () => request('GET', '/support');
+export const supportTicket = (id) => request('GET', `/support/${id}`);
+export const openSupportTicket = (body) => request('POST', '/support', body);
+export const replySupport = (id, body) => request('POST', `/support/${id}/messages`, { body });
+
+// ----- Buying requests -----
+export const buyingRequests = (params = {}) =>
+  request('GET', `/buying-requests?${new URLSearchParams(Object.entries(params).filter(([, v]) => v))}`);
+export const myBuyingRequests = () => request('GET', '/buying-requests/mine');
+export const buyingRequest = (id) => request('GET', `/buying-requests/${id}`);
+export const postBuyingRequest = (body) => request('POST', '/buying-requests', body);
+export const sendOffer = (id, body) => request('POST', `/buying-requests/${id}/offers`, body);
+export const acceptOffer = (id, offerId) => request('PATCH', `/buying-requests/${id}/offers/${offerId}/accept`);
+export const closeBuyingRequest = (id) => request('PATCH', `/buying-requests/${id}/close`);
+
+// ----- Invite codes and vouchers -----
+export const myVouchers = () => request('GET', '/me/vouchers');
+export const myReferral = () => request('GET', '/me/referral');
+
+// ----- Staff: customer support -----
+export const adminSupport = {
+  list: (status) => request('GET', `/admin/support${status ? `?status=${status}` : ''}`),
+  get: (id) => request('GET', `/admin/support/${id}`),
+  reply: (id, body) => request('POST', `/admin/support/${id}/messages`, { body }),
+  setStatus: (id, status) => request('PATCH', `/admin/support/${id}`, { status }),
+};

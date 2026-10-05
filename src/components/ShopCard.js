@@ -22,7 +22,14 @@ export default function ShopCard({ shop }) {
     <Link to={`/store/${shop.id}`} className="card shop-card">
       <span className="shop-logo">{shop.logo ?? '🏪'}</span>
       <div className="shop-card-body">
-        <h3>{shop.name}</h3>
+        <h3>
+          {shop.name}{' '}
+          {shop.verified && (
+            <span className="verified-badge" title="Verified by Zed Market">
+              ✓
+            </span>
+          )}
+        </h3>
         <div className="muted small">
           📍 {shop.area ? `${shop.area}, ` : ''}
           {formatLocation(shop)}

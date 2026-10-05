@@ -17,7 +17,7 @@ before(async () => {
   db = await createDb({ url: '', dataDir: '' }); // in-memory PGlite
   await migrate(db);
   await seedIfEmpty(db);
-  uploadDir = await mkdtemp(path.join(tmpdir(), 'amasampo-uploads-'));
+  uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-uploads-'));
   const sms = { send: async (phone, message) => sent.push({ phone, message }) };
   server = createApp(db, { uploadDir, sms }).listen(0);
   base = `http://localhost:${server.address().port}`;
@@ -50,6 +50,8 @@ async function signIn(phone, extra = {}) {
 }
 
 const shopBody = {
+  ownerFullName: 'Mwansa Banda',
+  nrc: '123456/78/1',
   name: 'Mwansa Hardware',
   phone: '0977 123 456',
   province: 'copperbelt',
@@ -104,6 +106,8 @@ describe('shops, products and orders', () => {
     const me = await api('GET', '/api/auth/me', undefined, seller.token);
     assert.equal(me.body.shopId, created.body.id);
     seller.shopId = created.body.id;
+    // New shops wait for staff approval; the approval flow itself is tested in cases-admin.test.js.
+    await db.query(`UPDATE shops SET verification = 'verified' WHERE id = $1`, [seller.shopId]);
 
     const bad = await api('POST', '/api/products', { name: 'X', category: 'nope', price: 10, stock: 1 }, seller.token);
     assert.equal(bad.status, 400);
@@ -231,14 +235,15 @@ describe('shops, products and orders', () => {
     assert.equal((await api('GET', '/api/orders/mine', undefined, seller.token)).body.length, 0);
   });
 
-  test('photo uploads accept small images only, from shop owners', async () => {
+  test('photo uploads accept small images from signed-in users (products and return evidence)', async () => {
     const pixel =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
     const ok = await api('POST', '/api/uploads', { dataUrl: pixel }, seller.token);
     assert.equal(ok.status, 201);
     const served = await fetch(base + ok.body.url);
     assert.equal(served.status, 200);
-    assert.equal((await api('POST', '/api/uploads', { dataUrl: pixel }, buyer.token)).status, 403);
+    assert.equal((await api('POST', '/api/uploads', { dataUrl: pixel }, buyer.token)).status, 201);
+    assert.equal((await api('POST', '/api/uploads', { dataUrl: pixel })).status, 401);
     assert.equal(
       (await api('POST', '/api/uploads', { dataUrl: 'data:text/html;base64,PGI+' }, seller.token)).status,
       400,

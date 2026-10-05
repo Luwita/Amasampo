@@ -1,4 +1,4 @@
-// Demo catalogue for Amasampo. All prices are in Zambian Kwacha (ZMW).
+// Demo catalogue for Zed Market. All prices are in Zambian Kwacha (ZMW).
 // `tiers` are wholesale price breaks: buy at least `min` units to pay `price` each.
 // Products uploaded by shop owners are stored in StoreContext and merged with these.
 
@@ -777,7 +777,7 @@ export const seedProducts = raw.map(
     lowStockAt: 5,
     reviewCount: 0,
     description:
-      `${name}, sold by a verified Amasampo shop. Buy one at retail, or order in bulk to unlock ` +
+      `${name}, sold by a verified Zed Market shop. Buy one at retail, or order in bulk to unlock ` +
       'wholesale prices for your own business. Choose collection or delivery by a Zambian courier at checkout.',
   }),
 );

@@ -2,7 +2,12 @@
 import { categories } from '../src/data/catalog.js';
 import { expandSearch } from '../src/data/search.js';
 import { HttpError, newId } from './http.js';
+import { notify, notifyShopOwner } from './notify.js';
 import { toOrder, toProduct } from './mappers.js';
+
+// Buyers only see shops that staff have approved and that aren't suspended.
+export const LIVE_SHOP = `(sh.verification = 'verified' AND sh.suspended_at IS NULL)`;
+export const isLive = (shopRow) => shopRow.verification === 'verified' && !shopRow.suspended_at;
 
 export async function myShopOrFail(db, user) {
   if (!user.shopId) throw new HttpError(403, 'Open a shop first');
@@ -16,6 +21,10 @@ export async function loadOrders(db, orderRows, shopId = null) {
   const shipments = await db.query(
     `SELECT s.*, sh.name AS shop_name, sh.province AS shop_province, sh.town AS shop_town, sh.area AS shop_area, sh.phone AS shop_phone,
             sh.tpin AS shop_tpin, sh.vat_registered AS shop_vat_registered,
+            (SELECT json_build_object('id', c.id, 'status', c.status, 'kind', c.kind, 'resolution', c.resolution)
+               FROM cases c WHERE c.shipment_id = s.id ORDER BY c.created_at DESC LIMIT 1) AS latest_case,
+            (SELECT COALESCE(sum(r.amount), 0) FROM refunds r WHERE r.shipment_id = s.id) AS refunded,
+            (SELECT bool_and(r.status = 'paid') FROM refunds r WHERE r.shipment_id = s.id) AS refunds_paid,
             COALESCE((
               SELECT json_agg(json_build_object(
                        'product_id', i.product_id, 'name', i.name, 'options', i.options, 'qty', i.qty,
@@ -50,13 +59,14 @@ const productParams = (p) => [
   p.weightKg,
   JSON.stringify(p.options),
   p.lowStockAt,
+  p.sourceProductId || null,
 ];
 
 export async function insertProduct(q, shopId, p) {
   const [row] = await q.query(
     `INSERT INTO products (id, shop_id, badge, name, category, icon, description, price, old_price, tiers, stock, local,
-                           images, weight_kg, options, low_stock_at)
-     VALUES ($1, $2, 'New', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+                           images, weight_kg, options, low_stock_at, source_product_id)
+     VALUES ($1, $2, 'New', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
     [newId('prd'), shopId, ...productParams(p)],
   );
   return toProduct(row);
@@ -65,7 +75,8 @@ export async function insertProduct(q, shopId, p) {
 export async function updateProduct(q, id, shopId, p) {
   const [row] = await q.query(
     `UPDATE products SET name = $3, category = $4, icon = $5, description = $6, price = $7, old_price = $8, tiers = $9,
-            stock = $10, local = $11, images = $12, weight_kg = $13, options = $14, low_stock_at = $15
+            stock = $10, local = $11, images = $12, weight_kg = $13, options = $14, low_stock_at = $15,
+            source_product_id = COALESCE($16, source_product_id)
       WHERE id = $1 AND shop_id = $2 AND deleted_at IS NULL RETURNING *`,
     [id, shopId, ...productParams(p)],
   );
@@ -73,13 +84,15 @@ export async function updateProduct(q, id, shopId, p) {
 }
 
 // Builds the product search query. Matching is typo-tolerant (pg_trgm) and understands local synonyms.
-export async function searchProducts(db, f) {
+// `viewerShopId`: the signed-in owner also sees their own shop's products while it is waiting for approval.
+export async function searchProducts(db, f, viewerShopId = null) {
   const params = [];
   const add = (v) => {
     params.push(v);
     return `$${params.length}`;
   };
   const where = ['p.deleted_at IS NULL'];
+  where.push(viewerShopId ? `(${LIVE_SHOP} OR sh.id = ${add(viewerShopId)})` : LIVE_SHOP);
   let rank = null; // relevance expression, only when searching
 
   if (f.ids) where.push(`p.id = ANY(${add(f.ids.split(',').slice(0, 100))})`);
@@ -155,5 +168,99 @@ export async function refreshRatings(q, productId, shopId) {
             review_count = (SELECT count(*) FROM reviews WHERE shop_id = $1)
       WHERE id = $1`,
     [shopId],
+  );
+}
+
+// Cancels a parcel: puts stock back, gives back a discount-code use and an agreed price, and records a refund
+// if the buyer had paid. `by` is 'buyer', 'seller' or 'admin'; staff can also cancel parcels already sent.
+export async function cancelShipment(t, orderId, shopId, by, reason) {
+  const [s] = await t.query(
+    `SELECT s.*, o.payment_status, o.buyer_id FROM shipments s JOIN orders o ON o.id = s.order_id
+      WHERE s.order_id = $1 AND s.shop_id = $2 FOR UPDATE OF s`,
+    [orderId, shopId],
+  );
+  if (!s) throw new HttpError(404, 'Order not found');
+  const cancellable = by === 'admin' ? ['pending', 'dispatched'] : ['pending'];
+  if (!cancellable.includes(s.status)) {
+    throw new HttpError(
+      409,
+      s.status === 'cancelled'
+        ? 'This parcel is already cancelled'
+        : by === 'admin'
+          ? 'Delivered parcels are handled as returns, not cancellations'
+          : "This parcel has already been sent, so it can't be cancelled. If there's a problem when it arrives, report it from your orders.",
+    );
+  }
+  await t.query(
+    `UPDATE shipments SET status = 'cancelled', cancelled_by = $2, cancel_reason = $3, updated_at = now() WHERE id = $1`,
+    [s.id, by, reason],
+  );
+  const items = await t.query('SELECT * FROM order_items WHERE shipment_id = $1', [s.id]);
+  for (const i of items) {
+    await t.query('UPDATE products SET stock = stock + $2, sold = GREATEST(sold - $2, 0) WHERE id = $1', [
+      i.product_id,
+      i.qty,
+    ]);
+    if (i.price_request_id) {
+      await t.query(`UPDATE price_requests SET status = 'accepted' WHERE id = $1 AND status = 'ordered'`, [
+        i.price_request_id,
+      ]);
+    }
+  }
+  if (s.coupon_code) {
+    await t.query('UPDATE coupons SET uses = GREATEST(uses - 1, 0) WHERE shop_id = $1 AND code = $2', [
+      s.shop_id,
+      s.coupon_code,
+    ]);
+  }
+  // Return the voucher if every parcel of the order is now cancelled.
+  const [order] = await t.query(
+    `SELECT o.voucher_id, bool_and(x.status = 'cancelled') AS all_cancelled
+       FROM orders o JOIN shipments x ON x.order_id = o.id WHERE o.id = $1 GROUP BY o.voucher_id`,
+    [orderId]
+  );
+  if (order?.voucher_id && order.all_cancelled) {
+    await t.query('UPDATE vouchers SET used_order_id = NULL WHERE id = $1', [order.voucher_id]);
+  }
+
+  const message = {
+    kind: 'cancelled',
+    title: `Order ${orderId} was cancelled`,
+    body: reason,
+    link: by === 'buyer' ? '/seller?tab=orders' : '/account',
+  };
+  if (by === 'buyer') await notifyShopOwner(t, s.shop_id, message);
+  else await notify(t, s.buyer_id, message);
+
+  let refund = 0;
+  if (s.payment_status === 'paid') {
+    refund = Number(s.subtotal) - Number(s.discount) - Number(s.voucher_discount ?? 0) + Number(s.fee);
+    if (refund > 0) {
+      await t.query(
+        `INSERT INTO refunds (id, order_id, shipment_id, shop_id, buyer_id, reason, amount)
+         VALUES ($1, $2, $3, $4, $5, 'cancelled', $6)`,
+        [newId('rfd'), orderId, s.id, s.shop_id, s.buyer_id, refund],
+      );
+    }
+  }
+  return { refund };
+}
+
+// How much can still be refunded on a parcel (goods after discount, plus delivery, minus earlier refunds).
+export async function refundableLeft(q, shipmentId) {
+  const [row] = await q.query(
+    `SELECT s.subtotal - s.discount - s.voucher_discount + s.fee
+              - COALESCE((SELECT sum(amount) FROM refunds r WHERE r.shipment_id = s.id), 0)
+              AS left_amount
+       FROM shipments s WHERE s.id = $1`,
+    [shipmentId],
+  );
+  return Math.max(0, Number(row?.left_amount ?? 0));
+}
+
+export async function logAdmin(q, adminId, action, targetType, targetId, note = '') {
+  await q.query(
+    'INSERT INTO admin_actions (id, admin_id, action, target_type, target_id, note) VALUES ($1, $2, $3, $4, $5, $6)',
+    [newId('act'), adminId, action, targetType, targetId, note],
   );
 }

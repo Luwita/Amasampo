@@ -9,8 +9,9 @@ export async function seedIfEmpty(db) {
   await db.tx(async (t) => {
     for (const s of seedShops) {
       await t.query(
-        `INSERT INTO shops (id, name, logo, province, town, area, phone, couriers, rating, since)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        // Demo shops are created already approved, so the marketplace isn't empty.
+        `INSERT INTO shops (id, name, logo, province, town, area, phone, couriers, rating, since, verification)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'verified')`,
         [s.id, s.name, s.logo, s.province, s.town, s.area, s.phone, JSON.stringify(s.couriers), s.rating, s.since],
       );
     }

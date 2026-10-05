@@ -47,7 +47,7 @@ export default function AskShop({ shop, product, label = '💬 Ask the shop' }) 
       <label htmlFor="ask-body">Message {shop.name}</label>
       <textarea id="ask-body" rows="3" value={body} onChange={(e) => setBody(e.target.value)} autoFocus />
       <p className="muted small">
-        🔒 Keep payments on Amasampo. Your money is only protected when you pay through checkout.
+        🔒 Keep payments on Zed Market. Your money is only protected when you pay through checkout.
       </p>
       {error && <span className="error">{error}</span>}
       <div className="pdp-buttons">

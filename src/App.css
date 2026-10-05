@@ -646,6 +646,7 @@ hr {
   margin-top: 16px;
 }
 select,
+input:not([type]),
 input[type='text'],
 input[type='tel'],
 input[type='email'],

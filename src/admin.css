@@ -1,0 +1,291 @@
+/* Cancellations, returns, verification badges and the admin panel. */
+
+.cancel-box,
+.case-form {
+  flex-basis: 100%;
+  display: grid;
+  gap: 8px;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.case-form .scope-bar {
+  margin: 0;
+}
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.item-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+.item-pick input {
+  width: 64px;
+}
+.cancelled-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+  padding: 8px 0;
+}
+.timeline {
+  list-style: none;
+  padding: 0 0 0 14px;
+  margin: 16px 0;
+  border-left: 2px solid var(--line);
+  display: grid;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.timeline li {
+  position: relative;
+}
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.case-detail h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.case-row:hover {
+  box-shadow: 0 6px 18px rgba(17, 24, 39, 0.1);
+}
+.case-open,
+.case-rejected {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+.case-escalated {
+  background: #e0ecff;
+  color: #1d4ed8;
+}
+.case-accepted,
+.case-resolved {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.case-withdrawn {
+  background: #f3f4f6;
+  color: var(--muted);
+}
+
+/* Verification */
+.verified-badge {
+  display: inline-block;
+  background: var(--green);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7em;
+  font-weight: 700;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+.verify-status {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.verify-verified {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.verify-pending {
+  background: #e0ecff;
+  color: #1d4ed8;
+}
+.verify-rejected {
+  background: #fef2f2;
+  color: var(--red);
+}
+.danger-bar {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: var(--red);
+}
+.alert-bar ul {
+  margin: 6px 0 0;
+}
+
+/* Admin panel */
+.admin h3 {
+  margin-top: 18px;
+}
+.admin-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.admin-filters input {
+  flex: 1;
+  min-width: 220px;
+}
+.tile-link {
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.tile-link:hover {
+  outline: 2px solid var(--primary-soft);
+}
+.reason-inline {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.reason-inline input {
+  min-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.amount-input {
+  width: 180px;
+}
+
+/* Shop approval */
+.review-bar {
+  background: #e0ecff;
+  border-color: #93c5fd;
+  color: #1e3a8a;
+}
+.review-note {
+  background: #e0ecff;
+  color: #1e3a8a;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  display: inline-block;
+}
+
+/* ---------- Analytics ---------- */
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+.admin-grid .form-card {
+  margin: 0;
+}
+.bar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bar-list li {
+  display: grid;
+  grid-template-columns: minmax(90px, 1.2fr) 2fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 0.9rem;
+}
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.bar-value {
+  text-align: right;
+  font-weight: 600;
+}
+.day-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 160px;
+  padding-top: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.day-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--primary);
+  opacity: 0.85;
+}
+.day-bar:hover {
+  opacity: 1;
+  background: var(--primary-dark);
+}
+.day-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+/* ---------- Payouts and marketing ---------- */
+.pay-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.pay-form input[type='number'] {
+  width: 110px;
+}
+.pay-form input:not([type]) {
+  width: 170px;
+}
+.admin-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.admin-log li {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.banner-swatch {
+  width: 36px;
+  height: 24px;
+  border-radius: 6px;
+}
+.marketing-form {
+  margin-bottom: 16px;
+}
+.banner-preview-hero {
+  min-height: 180px;
+  padding: 24px;
+  margin: 8px 0 14px;
+}
+.hero-image {
+  position: absolute;
+  right: 4%;
+  top: 50%;
+  transform: translateY(-50%);
+  max-height: 80%;
+  max-width: 40%;
+  object-fit: contain;
+  border-radius: 12px;
+}

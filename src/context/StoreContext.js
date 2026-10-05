@@ -44,13 +44,13 @@ const uploadImages = (images = []) =>
 
 export function StoreProvider({ children }) {
   const [toast, setToast] = useState(null);
-  const [cart, setCart] = usePersistentState('amasampo.cart', []); // [{ id, qty, options, quoteId, quotePrice }]
-  const [lowData, setLowData] = usePersistentState('amasampo.lowData', prefersLowData());
-  const [unread, setUnread] = useState(0);
+  const [cart, setCart] = usePersistentState('zedmarket.cart', []); // [{ id, qty, options, quoteId, quotePrice }]
+  const [lowData, setLowData] = usePersistentState('zedmarket.lowData', prefersLowData());
+  const [badges, setBadges] = useState({ notifications: 0, messages: 0, toDispatch: 0 });
   const [installPrompt, setInstallPrompt] = useState(null);
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
-  const [wishlist, setWishlist] = usePersistentState('amasampo.wishlist', []);
-  const [location, setLocation] = usePersistentState('amasampo.location', DEFAULT_LOCATION);
+  const [wishlist, setWishlist] = usePersistentState('zedmarket.wishlist', []);
+  const [location, setLocation] = usePersistentState('zedmarket.location', DEFAULT_LOCATION);
 
   const [shopsState, setShopsState] = useState({ shops: [], status: 'loading', error: null });
   // Products seen so far, by id. Lists are fetched page by page; the cache serves the cart and quick lookups.
@@ -130,17 +130,17 @@ export function StoreProvider({ children }) {
     // Refetch when the set of ids changes or products were edited, to pick up new prices and stock.
   }, [wantedIds, catalogVersion, remember]);
 
-  // New-message badge: checked every 30 seconds while signed in and the tab is visible.
+  // Red dots (notifications, messages, parcels to send): checked every 30 seconds while signed in and visible.
   const refreshUnread = useCallback(() => {
     if (!api.getToken()) return;
     api
-      .unreadMessages()
-      .then((r) => setUnread(r.count))
+      .counts()
+      .then(setBadges)
       .catch(() => {});
   }, []);
   useEffect(() => {
     if (!user) {
-      setUnread(0);
+      setBadges({ notifications: 0, messages: 0, toDispatch: 0 });
       return undefined;
     }
     refreshUnread();
@@ -181,18 +181,20 @@ export function StoreProvider({ children }) {
     const getProduct = (id) => productCache[id];
     const myShop = user?.shopId ? getShop(user.shopId) : null;
 
-    // Wholesale tiers count every variant of a product in the cart together (lines at an agreed price aside).
+    // Wholesale tiers count every selected variant of a product together (lines at an agreed price aside).
+    const isSelected = (l) => l.selected !== false;
     const totalQty = {};
-    cart.forEach((l) => !l.quoteId && (totalQty[l.id] = (totalQty[l.id] ?? 0) + l.qty));
+    cart.forEach((l) => isSelected(l) && !l.quoteId && (totalQty[l.id] = (totalQty[l.id] ?? 0) + l.qty));
     const items = cart
       .map((line) => {
         const product = getProduct(line.id);
         if (!product) return null;
-        const price = line.quoteId ? line.quotePrice : unitPrice(product, totalQty[line.id]);
+        const price = line.quoteId ? line.quotePrice : unitPrice(product, totalQty[line.id] ?? line.qty);
         return {
           ...line,
           options: line.options ?? {},
           key: cartKey(line),
+          selected: isSelected(line),
           choice: describeChoice(line.options),
           product,
           shop: getShop(product.shopId),
@@ -202,8 +204,9 @@ export function StoreProvider({ children }) {
       })
       .filter(Boolean);
 
-    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
-    const retailTotal = items.reduce((sum, i) => sum + i.product.price * i.qty, 0);
+    const selectedItems = items.filter((i) => i.selected);
+    const subtotal = selectedItems.reduce((sum, i) => sum + i.total, 0);
+    const retailTotal = selectedItems.reduce((sum, i) => sum + i.product.price * i.qty, 0);
 
     const refreshMe = async () => {
       const fresh = await api.me();
@@ -232,6 +235,7 @@ export function StoreProvider({ children }) {
       },
 
       items,
+      selectedItems,
       cartStatus,
       subtotal,
       wholesaleSavings: retailTotal - subtotal,
@@ -271,9 +275,49 @@ export function StoreProvider({ children }) {
       removeFromCart(key) {
         setCart((prev) => prev.filter((l) => cartKey(l) !== key));
       },
+      toggleSelected(key) {
+        setCart((prev) => prev.map((l) => (cartKey(l) === key ? { ...l, selected: l.selected === false } : l)));
+      },
+      selectAll(selected) {
+        setCart((prev) => prev.map((l) => ({ ...l, selected })));
+      },
+      removeSelected() {
+        setCart((prev) => prev.filter((l) => l.selected === false));
+      },
+      // Moves the selected products to Saved items.
+      saveSelectedForLater() {
+        const ids = cart.filter(isSelected).map((l) => l.id);
+        setWishlist((prev) => [...new Set([...prev, ...ids])]);
+        setCart((prev) => prev.filter((l) => l.selected === false));
+        setToast(`Moved ${ids.length} item${ids.length === 1 ? '' : 's'} to Saved`);
+      },
+      // Adds every item of a past order back to the cart ("Buy again").
+      buyAgain(order) {
+        // Agreed wholesale prices were one-off, so those items come back at the normal price.
+        const lines = order.shipments.flatMap((s) => s.items);
+        setCart((prev) => {
+          let next = prev;
+          for (const i of lines) {
+            const options = Object.fromEntries(
+              (i.options || '')
+                .split(', ')
+                .filter(Boolean)
+                .map((pair) => pair.split(': '))
+            );
+            const key = cartKey({ id: i.id, options });
+            next = next.some((l) => cartKey(l) === key)
+              ? next.map((l) => (cartKey(l) === key ? { ...l, qty: l.qty + i.qty } : l))
+              : [...next, { id: i.id, qty: i.qty, options }];
+          }
+          return next;
+        });
+        setToast('Added to your cart');
+      },
 
       // ----- Messages -----
-      unreadMessages: unread,
+      unreadMessages: badges.messages,
+      notificationCount: badges.notifications,
+      toDispatchCount: badges.toDispatch,
       refreshUnread,
 
       // ----- Phone app & low-data mode -----
@@ -324,13 +368,21 @@ export function StoreProvider({ children }) {
       // ----- Shop owners -----
       myShop,
       async registerShop(shop, owner) {
-        const created = await api.createShop({ ...shop, ownerName: owner?.name });
+        const created = await api.createShop({
+          ...shop,
+          banner: (await uploadImages(shop.banner ? [shop.banner] : []))[0] ?? null,
+          ownerName: owner?.name,
+          ownerFullName: owner?.name,
+          nrc: owner?.nrc,
+          pacra: owner?.pacra,
+        });
         await Promise.all([loadShops(), refreshMe()]);
-        setToast(`${created.name} is open for business!`);
+        setToast(`${created.name} has been sent for review`);
         return created;
       },
       async updateShop(id, patch) {
-        await api.updateShop(id, patch);
+        const banner = patch.banner ? (await uploadImages([patch.banner]))[0] : patch.banner;
+        await api.updateShop(id, { ...patch, ...(banner !== undefined && { banner }) });
         catalogChanged();
         setToast('Shop settings saved');
       },
@@ -368,7 +420,7 @@ export function StoreProvider({ children }) {
       reloadOrders: () => loadOrders(user),
       async placeOrder(order) {
         const placed = await api.placeOrder(order);
-        setCart([]);
+        setCart((prev) => prev.filter((l) => l.selected === false));
         setOrders((prev) => [placed, ...prev]);
         catalogChanged(); // stock has changed
         return placed;
@@ -404,7 +456,7 @@ export function StoreProvider({ children }) {
     ordersReady,
     location,
     toast,
-    unread,
+    badges,
     lowData,
     online,
     installPrompt,

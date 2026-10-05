@@ -1,8 +1,9 @@
 // Prices an order from the current catalogue. The server runs this as the source of truth,
 // so totals never come from the buyer's browser.
 import { unitPrice } from './catalog.js';
-import { quote, tooHeavyFor, formatKg } from './couriers.js';
-import { couponDiscount } from './fees.js';
+import { offeredBy, quote, tooHeavyFor, formatKg } from './couriers.js';
+import { couponDiscount, splitDiscount } from './fees.js';
+import { describePoint, getPickupPoint } from './pickupPoints.js';
 import { checkChoice, describeChoice, lineKey } from './options.js';
 
 export class OrderError extends Error {}
@@ -11,7 +12,20 @@ export class OrderError extends Error {}
 // picks:   { [shopId]: courierId }, to: { province, town }
 // coupons: { [shopId]: { code, kind, value, minSpend } } — codes already checked as valid for the buyer
 // quotes:  { [quoteId]: { productId, qty, price } } — accepted, unexpired price requests of this buyer
-export function priceOrder({ lines, getProduct, getShop, to, picks, payment, coupons = {}, quotes = {} }) {
+// voucher: { amount, minSpend } — a Zed Market voucher of this buyer, already checked as unused and unexpired
+// pickupPoint: id of the Zed Market Point chosen for parcels sent with the 'point' option
+export function priceOrder({
+  lines,
+  getProduct,
+  getShop,
+  to,
+  picks,
+  payment,
+  coupons = {},
+  quotes = {},
+  voucher = null,
+  pickupPoint = null,
+}) {
   // Merge repeated lines (same product, same choices, same agreed price).
   const merged = new Map();
   for (const { productId, qty, options = {}, quoteId } of lines) {
@@ -69,7 +83,9 @@ export function priceOrder({ lines, getProduct, getShop, to, picks, payment, cou
 
   const shipments = [...byShop].map(([shopId, { items, weightKg }]) => {
     const shop = getShop(shopId);
-    const q = shop && quote(picks?.[shopId], shop, to, weightKg);
+    const pick = picks?.[shopId];
+    // Only options this shop actually offers (plus the Zed Market network) can be chosen.
+    const q = shop && offeredBy(shop).includes(pick) && quote(pick, shop, to, weightKg);
     if (!q) {
       const heavy = shop ? tooHeavyFor(shop, weightKg).find((c) => c.id === picks?.[shopId]) : null;
       throw new OrderError(
@@ -80,6 +96,13 @@ export function priceOrder({ lines, getProduct, getShop, to, picks, payment, cou
     }
     if (payment === 'cod' && !q.courier.cod) {
       throw new OrderError(`Pay on Delivery isn't available with ${q.courier.name}`);
+    }
+    let point = null;
+    if (q.courier.id === 'point') {
+      point = getPickupPoint(pickupPoint);
+      if (!point || point.province !== to.province || point.town !== to.town) {
+        throw new OrderError(`Choose the Zed Market Point in ${to.town} where you will collect your parcel`);
+      }
     }
     const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
     let discount = 0;
@@ -101,13 +124,35 @@ export function priceOrder({ lines, getProduct, getShop, to, picks, payment, cou
       courierName: q.courier.name,
       fee: q.fee,
       eta: q.eta,
+      pickupPoint: point ? describePoint(point) : null,
+      voucherDiscount: 0,
     };
   });
 
   const subtotal = shipments.reduce((sum, s) => sum + s.subtotal, 0);
   const discount = shipments.reduce((sum, s) => sum + s.discount, 0);
   const delivery = shipments.reduce((sum, s) => sum + s.fee, 0);
-  return { shipments, subtotal, discount, delivery, total: subtotal - discount + delivery };
+
+  // A Zed Market voucher comes off the goods, shared across the parcels.
+  let voucherDiscount = 0;
+  if (voucher) {
+    const goods = shipments.map((s) => s.subtotal - s.discount);
+    const goodsTotal = goods.reduce((n, v) => n + v, 0);
+    if (goodsTotal < voucher.minSpend) {
+      throw new OrderError(`Spend at least K${voucher.minSpend} on products to use this voucher`);
+    }
+    voucherDiscount = Math.min(voucher.amount, goodsTotal);
+    splitDiscount(voucherDiscount, goods).forEach((part, i) => (shipments[i].voucherDiscount = part));
+  }
+
+  return {
+    shipments,
+    subtotal,
+    discount,
+    voucherDiscount,
+    delivery,
+    total: subtotal - discount - voucherDiscount + delivery,
+  };
 }
 
 // Parcel weight per shop for a set of cart lines, used to show delivery prices before checkout.

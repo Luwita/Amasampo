@@ -3,15 +3,17 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 
 // Where a signed-in user lands: shop owners go to their dashboard, or to shop setup if they have no shop yet.
-const homeFor = (user) => (user.shopId ? '/seller' : user.accountType === 'seller' ? '/sell#register' : '/account');
+const homeFor = (user) =>
+  user.isAdmin ? '/admin' : user.shopId ? '/seller' : user.accountType === 'seller' ? '/sell#register' : '/account';
 
 export default function Login() {
   const { user, requestCode, verifyCode } = useStore();
   const [params] = useSearchParams();
   const next = params.get('next');
-  const [mode, setMode] = useState('login');
+  const ref = params.get('ref') ?? '';
+  const [mode, setMode] = useState(ref ? 'register' : 'login');
   const [step, setStep] = useState('phone');
-  const [form, setForm] = useState({ name: '', phone: '', code: '', accountType: 'buyer' });
+  const [form, setForm] = useState({ name: '', phone: '', code: '', accountType: 'buyer', referralCode: ref.toUpperCase() });
   const [devCode, setDevCode] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -47,7 +49,11 @@ export default function Login() {
       verifyCode({
         phone: form.phone,
         code: form.code.trim(),
-        ...(mode === 'register' ? { name: form.name.trim(), accountType: form.accountType } : {}),
+        ...(mode === 'register' ? {
+              name: form.name.trim(),
+              accountType: form.accountType,
+              referralCode: form.referralCode.trim().toUpperCase() || undefined,
+            } : {}),
       }),
     );
   };
@@ -79,6 +85,11 @@ export default function Login() {
                     <option value="business">Business buyer (wholesale)</option>
                     <option value="seller">Shop owner (I want to sell)</option>
                   </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="a-ref">Invite code (optional)</label>
+                  <input id="a-ref" value={form.referralCode} onChange={set('referralCode')} placeholder="e.g. ZMA1B2C3" />
+                  {form.referralCode && <span className="muted small">🎁 You get a K50 voucher when you join with an invite code.</span>}
                 </div>
               </>
             )}

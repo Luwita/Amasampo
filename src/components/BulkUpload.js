@@ -155,7 +155,7 @@ export default function BulkUpload({ onDone }) {
         <button
           type="button"
           className="btn btn-outline"
-          onClick={() => downloadCsv('amasampo-products-template.csv', [TEMPLATE_HEADERS, ...EXAMPLE_ROWS])}
+          onClick={() => downloadCsv('zed-market-products-template.csv', [TEMPLATE_HEADERS, ...EXAMPLE_ROWS])}
         >
           ⬇ Download template
         </button>

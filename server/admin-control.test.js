@@ -1,0 +1,200 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { after, before, describe, test } from 'node:test';
+import { createApp } from './app.js';
+import { createDb, migrate } from './db.js';
+import { seedIfEmpty } from './seed.js';
+
+let server;
+let base;
+let db;
+let uploadDir;
+const sent = [];
+const OWNER_PHONE = '0950000009';
+
+async function api(method, url, body, token) {
+  const res = await fetch(base + url, {
+    method,
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+async function signIn(phone, extra = {}) {
+  await api('POST', '/api/auth/request-code', { phone });
+  const code = sent.at(-1).message.match(/\d{6}/)[0];
+  const res = await api('POST', '/api/auth/verify', { phone, code, ...extra });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return res.body;
+}
+
+const shopBody = (phone, name) => ({
+  name,
+  ownerFullName: 'Shop Owner',
+  nrc: '123456/78/1',
+  phone,
+  province: 'lusaka',
+  town: 'Lusaka',
+  area: 'Cairo Road',
+  couriers: ['pickup', 'seller'],
+});
+
+let owner;
+let seller;
+let buyer;
+let fanId;
+const shipping = { name: 'Chipo', phone: '0966100100', province: 'lusaka', town: 'Lusaka', address: 'Plot 3' };
+const order = () =>
+  api(
+    'POST',
+    '/api/orders',
+    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'mtn' },
+    buyer.token,
+  );
+const notificationsOf = async (token) => (await api('GET', '/api/notifications', undefined, token)).body;
+
+before(async () => {
+  db = await createDb({ url: '', dataDir: '' });
+  await migrate(db);
+  await seedIfEmpty(db);
+  uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-admin-control-'));
+  server = createApp(db, {
+    uploadDir,
+    sms: { send: async (phone, message) => sent.push({ phone, message }) },
+    adminPhones: [OWNER_PHONE],
+  }).listen(0);
+  base = `http://localhost:${server.address().port}`;
+
+  owner = await signIn(OWNER_PHONE, { name: 'Noah' });
+  seller = await signIn('0977100100', { name: 'Mutinta' });
+  seller.shopId = (await api('POST', '/api/shops', shopBody('0977100100', 'Mutinta Appliances'), seller.token)).body.id;
+  await api('PATCH', `/api/admin/shops/${seller.shopId}/verification`, { status: 'verified' }, owner.token);
+  fanId = (
+    await api('POST', '/api/products', { name: 'Standing Fan', category: 'home', price: 500, stock: 50, weightKg: 2 }, seller.token)
+  ).body.id;
+  buyer = await signIn('0966100100', { name: 'Chipo' });
+});
+
+after(async () => {
+  server.close();
+  await db.close();
+  await rm(uploadDir, { recursive: true, force: true });
+});
+
+describe('staff accounts', () => {
+  test('an admin account is staff only: it cannot open a shop', async () => {
+    assert.equal(owner.user.isAdmin, true);
+    assert.equal(owner.user.staffRole, 'owner');
+    assert.equal(owner.user.shopId, null);
+    const res = await api('POST', '/api/shops', shopBody('0950000009', 'Staff Shop'), owner.token);
+    assert.equal(res.status, 403);
+    assert.match(res.body.error, /staff accounts can't open a shop/);
+  });
+
+  test('owners add and remove staff; staff cannot manage staff or settings', async () => {
+    const added = await api('POST', '/api/admin/staff', { phone: '0955123456', name: 'Mapalo' }, owner.token);
+    assert.equal(added.status, 201);
+    const staff = await signIn('0955123456');
+    assert.equal(staff.user.isAdmin, true);
+    assert.equal(staff.user.staffRole, 'staff');
+
+    assert.equal((await api('GET', '/api/admin/stats', undefined, staff.token)).status, 200);
+    assert.equal((await api('POST', '/api/admin/staff', { phone: '0955999999' }, staff.token)).status, 403);
+    assert.equal((await api('PATCH', '/api/admin/settings', { commissionRate: 0.2 }, staff.token)).status, 403);
+    assert.equal((await api('POST', '/api/shops', shopBody('0955123456', 'Side hustle'), staff.token)).status, 403);
+    // Staff can't suspend the owner, and the owner can't be suspended at all.
+    assert.equal((await api('PATCH', `/api/admin/users/${owner.user.id}/suspension`, { suspended: true, reason: 'Testing it' }, staff.token)).status, 403);
+
+    const list = (await api('GET', '/api/admin/staff', undefined, staff.token)).body;
+    assert.deepEqual(list.map((s) => [s.name, s.role]), [
+      ['Noah', 'owner'],
+      ['Mapalo', 'staff'],
+    ]);
+
+    assert.equal((await api('DELETE', `/api/admin/staff/${staff.user.id}`, undefined, owner.token)).status, 200);
+    assert.equal((await api('GET', '/api/admin/stats', undefined, staff.token)).status, 401, 'signed out when removed');
+    const again = await signIn('0955123456');
+    assert.equal(again.user.isAdmin, false);
+  });
+
+  test('a shop owner cannot be made staff', async () => {
+    const res = await api('POST', '/api/admin/staff', { phone: '0977100100' }, owner.token);
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /owns the shop Mutinta Appliances/);
+  });
+});
+
+describe('platform settings', () => {
+  test('a new commission rate applies to new orders only', async () => {
+    const before = (await order()).body;
+    const changed = await api('PATCH', '/api/admin/settings', { commissionRate: 0.1, welcomeVoucher: 75 }, owner.token);
+    assert.equal(changed.status, 200);
+    assert.equal(changed.body.commissionRate, 0.1);
+    const afterChange = (await order()).body;
+
+    for (const o of [before, afterChange]) {
+      await api('PATCH', `/api/orders/${o.id}/shipments/${seller.shopId}`, { status: 'dispatched' }, seller.token);
+      await api('PATCH', `/api/orders/${o.id}/shipments/${seller.shopId}`, { status: 'delivered' }, seller.token);
+    }
+    const month = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 7);
+    const statement = (await api('GET', `/api/seller/statement?month=${month}`, undefined, seller.token)).body;
+    assert.deepEqual(
+      statement.lines.map((l) => l.commission),
+      [25, 50],
+      'the earlier order keeps 5%, the new one pays 10%',
+    );
+    const { onHold } = (await api('GET', '/api/seller/payouts', undefined, seller.token)).body;
+    assert.equal(onHold, 925);
+
+    const { code } = (await api('GET', '/api/me/referral', undefined, buyer.token)).body;
+    const friend = await signIn('0966400400', { referralCode: code });
+    const [welcome] = (await api('GET', '/api/me/vouchers', undefined, friend.token)).body;
+    assert.equal(welcome.amount, 75, 'the new welcome voucher amount');
+
+    await api('PATCH', '/api/admin/settings', { commissionRate: 0.05, welcomeVoucher: 50 }, owner.token);
+    const log = (await api('GET', '/api/admin/actions', undefined, owner.token)).body;
+    assert.ok(log.some((a) => a.action === 'settings changed' && /commissionRate: 0.05 → 0.1/.test(a.note)));
+  });
+
+  test('settings are checked', async () => {
+    assert.equal((await api('PATCH', '/api/admin/settings', { commissionRate: 0.9 }, owner.token)).status, 400);
+    assert.equal((await api('PATCH', '/api/admin/settings', {}, owner.token)).status, 400);
+  });
+});
+
+describe('acting for a shop', () => {
+  test('staff fix shop details and listings, with a reason the shop sees', async () => {
+    const shop = (await api('GET', `/api/admin/shops/${seller.shopId}`, undefined, owner.token)).body;
+    const edit = { ...shop, name: 'Mutinta Home Appliances' };
+    assert.equal((await api('PUT', `/api/admin/shops/${seller.shopId}`, edit, owner.token)).status, 400, 'reason needed');
+    const saved = await api('PUT', `/api/admin/shops/${seller.shopId}`, { ...edit, note: 'Name as on PACRA certificate' }, owner.token);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.name, 'Mutinta Home Appliances');
+    assert.equal((await notificationsOf(seller.token))[0].title, 'Zed Market updated your shop details');
+
+    const product = (await api('GET', `/api/products/${fanId}`)).body;
+    const fixed = await api(
+      'PUT',
+      `/api/admin/products/${fanId}`,
+      { ...product, category: 'electronics', note: 'Fans belong in Electronics' },
+      owner.token,
+    );
+    assert.equal(fixed.status, 200);
+    assert.equal(fixed.body.category, 'electronics');
+  });
+
+  test('staff mark a parcel delivered when the courier confirms it', async () => {
+    const o = (await order()).body;
+    const url = `/api/admin/orders/${o.id}/shipments/${seller.shopId}/status`;
+    assert.equal((await api('PATCH', url, { status: 'delivered', note: 'Courier confirmed' }, owner.token)).status, 409, 'must be sent first');
+    await api('PATCH', url, { status: 'dispatched', note: 'Shop phoned in' }, owner.token);
+    const done = await api('PATCH', url, { status: 'delivered', note: 'Platinum confirmed delivery' }, owner.token);
+    assert.equal(done.status, 200);
+    assert.equal(done.body.shipments[0].status, 'delivered');
+    assert.match((await notificationsOf(buyer.token))[0].title, /Delivered/);
+    assert.equal((await api('PATCH', url, { status: 'delivered', note: 'x' }, seller.token)).status, 403);
+  });
+});

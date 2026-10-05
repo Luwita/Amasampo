@@ -1,13 +1,18 @@
 import { useState } from 'react';
+import { compressImage } from '../utils/image';
 import { categories } from '../data/catalog';
-import { couriers } from '../data/couriers';
+import { shopCouriers as couriers } from '../data/couriers';
 import { DEFAULT_LOCATION } from '../data/zambia';
 import LocationFields from './LocationFields';
 
 const PHONE = /^(\+?260|0)?[79]\d{8}$/;
 
+const NRC = /^\d{6}\/\d{2}\/\d$/;
+
 const empty = {
   ownerName: '',
+  nrc: '',
+  pacra: '',
   name: '',
   phone: '',
   category: '',
@@ -27,6 +32,9 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
     ownRates: initial?.ownRates ?? empty.ownRates,
     tpin: initial?.tpin ?? '',
     vatRegistered: initial?.vatRegistered ?? false,
+    banner: initial?.banner ?? '',
+    about: initial?.about ?? '',
+    openingHours: initial?.openingHours ?? '',
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -40,7 +48,8 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
   const submit = async (e) => {
     e.preventDefault();
     const errs = {};
-    if (withOwner && !form.ownerName.trim()) errs.ownerName = 'Enter your name';
+    if (withOwner && form.ownerName.trim().length < 4) errs.ownerName = 'Enter your full name as on your NRC';
+    if (withOwner && !NRC.test(form.nrc.trim())) errs.nrc = 'Enter your NRC number like 123456/78/1';
     if (!form.name.trim()) errs.name = 'Enter your shop name';
     if (!PHONE.test(form.phone.replace(/\s/g, ''))) errs.phone = 'Enter a valid Zambian number';
     if (!form.area.trim()) errs.area = 'Enter your street, market or area';
@@ -48,11 +57,14 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
     if (!form.couriers.some((c) => c !== 'pickup')) errs.couriers = 'Choose at least one delivery option';
     setErrors(errs);
     if (Object.keys(errs).length) return;
-    const { ownerName, ...shop } = form;
+    const { ownerName, nrc, pacra, ...shop } = form;
     const category = categories.find((c) => c.id === shop.category);
     setSaving(true);
     try {
-      await onSubmit({ ...shop, logo: category?.icon ?? shop.logo ?? '🏪' }, { name: ownerName, phone: form.phone });
+      await onSubmit(
+        { ...shop, logo: category?.icon ?? shop.logo ?? '🏪' },
+        { name: ownerName.trim(), phone: form.phone, nrc: nrc.trim(), pacra: pacra.trim() },
+      );
     } catch (err) {
       setErrors({ form: err.message });
     } finally {
@@ -76,9 +88,22 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
 
   return (
     <form onSubmit={submit} noValidate>
+      {withOwner && (
+        <>
+          <h3>About you</h3>
+          <p className="muted small">
+            Zed Market reviews every new shop before buyers can see it, usually within 2 working days. Your NRC is only
+            used for this check and is never shown to buyers.
+          </p>
+          <div className="form-grid">
+            {input('ownerName', 'Your full name (as on your NRC)', { autoComplete: 'name' })}
+            {input('nrc', 'NRC number', { placeholder: '123456/78/1' })}
+            {input('pacra', 'PACRA registration (if registered)', {})}
+          </div>
+        </>
+      )}
       <h3>Shop details</h3>
       <div className="form-grid">
-        {withOwner && input('ownerName', 'Your name', { autoComplete: 'name' })}
         {input('name', 'Shop name', { placeholder: 'e.g. Mwansa General Dealers' })}
         {input('phone', 'Phone (WhatsApp)', { type: 'tel', placeholder: '097 123 4567' })}
         <div className="field">
@@ -103,6 +128,48 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
         />
       </div>
       {input('area', 'Street, market or area', { placeholder: 'e.g. Shop 14, Kamwala Market' })}
+
+      <h3>Your shop page</h3>
+      <p className="muted small">Make your page look like your shop. Buyers see this when they open your shop.</p>
+      <div className="field">
+        <span className="label">Cover photo (optional)</span>
+        {form.banner ? (
+          <div className="banner-preview" style={{ backgroundImage: `url(${form.banner})` }}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setForm((f) => ({ ...f, banner: '' }))}>
+              Remove
+            </button>
+          </div>
+        ) : (
+          <input
+            type="file"
+            accept="image/*"
+            aria-label="Cover photo"
+            onChange={async (e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              try {
+                const banner = await compressImage(file, 1200, 0.7);
+                setForm((f) => ({ ...f, banner }));
+              } catch (err) {
+                setErrors((er) => ({ ...er, banner: err.message }));
+              }
+            }}
+          />
+        )}
+        {errors.banner && <span className="error">{errors.banner}</span>}
+      </div>
+      {input('openingHours', 'Opening hours', { placeholder: 'e.g. Mon–Sat 08:00–18:00, Sun closed' })}
+      <div className="field">
+        <label htmlFor="shop-about">About your shop</label>
+        <textarea
+          id="shop-about"
+          rows="3"
+          maxLength={1000}
+          value={form.about}
+          onChange={set('about')}
+          placeholder="What you sell, how long you've been trading, what makes you different…"
+        />
+      </div>
 
       <h3>Tax details (optional)</h3>
       <p className="muted small">Shown on your customers' receipts.</p>

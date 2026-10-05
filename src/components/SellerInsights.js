@@ -26,7 +26,7 @@ export function SalesReport({ onEditProduct }) {
   }, [days, catalogVersion, shopOrders]);
 
   const exportOrders = () =>
-    downloadCsv(`amasampo-sales-${new Date().toISOString().slice(0, 10)}.csv`, [
+    downloadCsv(`zed-market-sales-${new Date().toISOString().slice(0, 10)}.csv`, [
       [
         'Order',
         'Date',

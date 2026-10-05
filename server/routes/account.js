@@ -29,7 +29,7 @@ export function accountRoutes(db) {
       [id],
     );
     const shop = req.user.shopId ? (await db.query('SELECT * FROM shops WHERE id = $1', [req.user.shopId]))[0] : null;
-    res.set('Content-Disposition', 'attachment; filename="amasampo-my-data.json"');
+    res.set('Content-Disposition', 'attachment; filename="zed-market-my-data.json"');
     res.json({
       exportedAt: new Date().toISOString(),
       user: { ...user, phone: `0${user.phone}` },

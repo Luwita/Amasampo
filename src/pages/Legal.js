@@ -1,5 +1,19 @@
 import { Link, NavLink, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import * as api from '../api';
 import { COMMISSION_RATE } from '../data/fees';
+
+// The commission rate staff have set (it can change; past orders keep the rate they were placed at).
+function CommissionRate() {
+  const [rate, setRate] = useState(COMMISSION_RATE);
+  useEffect(() => {
+    api
+      .settings()
+      .then((s) => setRate(s.commissionRate))
+      .catch(() => {});
+  }, []);
+  return `${Math.round(rate * 1000) / 10}%`;
+}
 
 // Draft policies. They must be reviewed by a Zambian lawyer before launch.
 const UPDATED = '4 October 2026';
@@ -10,20 +24,20 @@ const docs = {
     body: (
       <>
         <p>
-          These terms apply when you use Amasampo, an online marketplace operated by Amasampo Zambia ("we", "us") that
-          connects buyers with independent shops in Zambia. By creating an account or placing an order you agree to
+          These terms apply when you use Zed Market, an online marketplace operated by Zed Market Zambia ("we", "us")
+          that connects buyers with independent shops in Zambia. By creating an account or placing an order you agree to
           them.
         </p>
         <h2>1. Who sells to you</h2>
         <p>
-          Products are sold by the shops listed on each product page, not by Amasampo. The shop is responsible for the
+          Products are sold by the shops listed on each product page, not by Zed Market. The shop is responsible for the
           product, its description and its delivery. We run the platform, take payments on the shop's behalf and help
           resolve problems.
         </p>
         <h2>2. Your account</h2>
         <p>
           You sign in with a Zambian mobile number and a one-time code. Keep your phone secure: anyone with access to
-          your number can use your account. You must be 18 or older, or use Amasampo with a parent or guardian.
+          your number can use your account. You must be 18 or older, or use Zed Market with a parent or guardian.
         </p>
         <h2>3. Prices, payment and delivery</h2>
         <ul>
@@ -43,11 +57,11 @@ const docs = {
         <h2>5. Reviews and messages</h2>
         <p>
           Reviews must be honest and about your own purchase. Messages must not be abusive, contain spam or ask for
-          payment outside Amasampo. We may remove content and suspend accounts that break these rules.
+          payment outside Zed Market. We may remove content and suspend accounts that break these rules.
         </p>
         <h2>6. Liability</h2>
         <p>
-          We work to keep Amasampo available and safe but cannot guarantee it will always be uninterrupted. Nothing in
+          We work to keep Zed Market available and safe but cannot guarantee it will always be uninterrupted. Nothing in
           these terms limits liability that cannot be limited under Zambian law.
         </p>
         <h2>7. Law</h2>
@@ -60,8 +74,8 @@ const docs = {
     body: (
       <>
         <p>
-          This policy explains how Amasampo Zambia collects and uses personal data, in line with the Data Protection Act
-          No. 3 of 2021.
+          This policy explains how Zed Market Zambia collects and uses personal data, in line with the Data Protection
+          Act No. 3 of 2021.
         </p>
         <h2>What we collect</h2>
         <ul>
@@ -103,7 +117,7 @@ const docs = {
           people who need it.
         </p>
         <h2>Contact</h2>
-        <p>privacy@amasampo.co.zm · Cairo Road, Lusaka</p>
+        <p>privacy@zedmarket.co.zm · Cairo Road, Lusaka</p>
       </>
     ),
   },
@@ -111,11 +125,11 @@ const docs = {
     title: 'Seller terms',
     body: (
       <>
-        <p>These terms apply to shops selling on Amasampo, in addition to the general terms of use.</p>
+        <p>These terms apply to shops selling on Zed Market, in addition to the general terms of use.</p>
         <h2>Fees</h2>
         <p>
-          Listing products is free. Amasampo charges a commission of {Math.round(COMMISSION_RATE * 100)}% on the value
-          of goods delivered (after any discount you offer). Delivery fees are passed to you in full, and you pay the
+          Listing products is free. Zed Market charges a commission of <CommissionRate /> on the value
+          of goods delivered (after any discount you offer). The rate that applies is the one in force when the order is placed. Delivery fees are passed to you in full, and you pay the
           courier you choose. Your monthly statement in the dashboard shows each order, the commission and your payout.
         </p>
         <h2>Your responsibilities</h2>
@@ -154,7 +168,7 @@ const docs = {
         <ol>
           <li>Tell the shop what is wrong and add photos if you can.</li>
           <li>The shop offers a replacement, repair or refund, usually within 3 working days.</li>
-          <li>If you cannot agree, contact support@amasampo.co.zm with your order number and we will step in.</li>
+          <li>If you cannot agree, contact support@zedmarket.co.zm with your order number and we will step in.</li>
         </ol>
         <h2>Refunds</h2>
         <p>
@@ -185,7 +199,7 @@ export default function Legal() {
       </nav>
       <article className="card document">
         <p className="draft-note">
-          Draft for review: to be checked by a Zambian lawyer before Amasampo launches publicly.
+          Draft for review: to be checked by a Zambian lawyer before Zed Market launches publicly.
         </p>
         <h1>{page.title}</h1>
         <p className="muted small">Last updated {UPDATED}</p>

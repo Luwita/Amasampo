@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import * as api from '../api';
 import BulkUpload from '../components/BulkUpload';
+import { CancelParcel, ShopCases } from '../components/Cases';
 import { ShopPriceRequests } from '../components/PriceRequests';
+import VerificationPanel, { ShopNotices } from '../components/Verification';
 import Promotions from '../components/Promotions';
 import { ProductImage } from '../components/ProductCard';
 import ProductForm from '../components/ProductForm';
@@ -12,6 +15,56 @@ import { useStore } from '../context/StoreContext';
 import { formatLocation } from '../data/zambia';
 import { useProduct, useProductSearch } from '../hooks/useProducts';
 import { formatK } from '../utils/format';
+
+// Send several parcels at once, e.g. after one trip to the bus station or courier office.
+function BatchDispatch({ orders }) {
+  const { updateShipment, notify } = useStore();
+  const pending = orders.filter(({ shipment }) => shipment.status === 'pending');
+  const [picked, setPicked] = useState([]);
+  const [busy, setBusy] = useState(false);
+  if (pending.length < 2) return null;
+  const all = picked.length === pending.length;
+  const send = async () => {
+    setBusy(true);
+    let sent = 0;
+    for (const { order, shipment } of pending.filter(({ order }) => picked.includes(order.id))) {
+      try {
+        await updateShipment(order.id, shipment.shopId, { status: 'dispatched' });
+        sent += 1;
+      } catch (err) {
+        notify(`${order.id}: ${err.message}`);
+      }
+    }
+    setPicked([]);
+    setBusy(false);
+    notify(`${sent} parcel${sent === 1 ? '' : 's'} marked as sent. Buyers have been notified.`);
+  };
+  return (
+    <div className="card cart-batch">
+      <label className="check">
+        <input type="checkbox" checked={all} onChange={() => setPicked(all ? [] : pending.map((p) => p.order.id))} />{' '}
+        {pending.length} parcels to send
+      </label>
+      <span className="batch-picks grow">
+        {pending.map(({ order, shipment }) => (
+          <label key={order.id} className="chip-check">
+            <input
+              type="checkbox"
+              checked={picked.includes(order.id)}
+              onChange={() =>
+                setPicked((p) => (p.includes(order.id) ? p.filter((x) => x !== order.id) : [...p, order.id]))
+              }
+            />{' '}
+            {order.id} · {shipment.courierName}
+          </label>
+        ))}
+      </span>
+      <button className="btn btn-primary btn-sm" disabled={!picked.length || busy} onClick={send}>
+        {busy ? 'Sending…' : `Mark ${picked.length || ''} as sent`}
+      </button>
+    </div>
+  );
+}
 
 function OrderCard({ order, shipment }) {
   const { updateShipment, notify } = useStore();
@@ -55,10 +108,12 @@ function OrderCard({ order, shipment }) {
         {order.paid ? '✅ Paid' : '💵 Collect payment on delivery'}: <strong>{formatK(shipment.subtotal)}</strong> +
         delivery {formatK(shipment.fee)}
       </div>
-      <ShipmentStatus shipment={shipment} />
+      <ShipmentStatus shipment={shipment} viewer="shop" />
+      {shipment.pickupPoint && <div className="small">📮 Send to {shipment.pickupPoint}</div>}
 
       {shipment.status === 'pending' && (
         <div className="dispatch-row">
+          <CancelParcel orderId={order.id} shopId={shipment.shopId} role="seller" />
           {!pickup && (
             <input
               placeholder={`${shipment.courierName} tracking / waybill no.`}
@@ -164,6 +219,92 @@ function ProductList({ result, lowOnly, go }) {
   );
 }
 
+const PAYOUT_METHODS = { mtn: 'MTN MoMo', airtel: 'Airtel Money', zamtel: 'Zamtel Kwacha', bank: 'Bank transfer' };
+
+// What Zed Market owes the shop and the payouts already made.
+function SellerPayouts() {
+  const [p, setP] = useState(null);
+  useEffect(() => {
+    api
+      .sellerPayouts()
+      .then(setP)
+      .catch(() => {});
+  }, []);
+  if (!p) return null;
+  return (
+    <section className="card form-card">
+      <h3>💰 Your money</h3>
+      <div className="tiles">
+        <div className="tile">
+          <span>Ready to be paid</span>
+          <strong className={p.available < 0 ? 'error' : ''}>{formatK(p.available)}</strong>
+          <small>{p.available < 0 ? 'commission owed on cash orders' : 'paid to you by Mobile Money or bank'}</small>
+        </div>
+        <div className="tile">
+          <span>On hold</span>
+          <strong>{formatK(p.onHold)}</strong>
+          <small>released 7 days after delivery</small>
+        </div>
+        <div className="tile">
+          <span>Paid to you so far</span>
+          <strong>{formatK(p.paidOut)}</strong>
+        </div>
+      </div>
+      {p.history.length > 0 && (
+        <ul className="admin-log">
+          {p.history.map((h) => (
+            <li key={h.id}>
+              <strong>{formatK(h.amount)}</strong> · {PAYOUT_METHODS[h.method]} {h.reference}
+              <span className="muted small"> · {new Date(h.date).toLocaleDateString('en-ZM', { dateStyle: 'medium' })}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const RESELL_MARGIN = 0.15;
+
+// 1-click resell: list another Zambian shop's product in your own shop with your margin.
+// You buy it from that shop (or keep stock) and send it to your customer yourself.
+function ResellForm({ productId, onSubmit }) {
+  const { getShop } = useStore();
+  const [source, setSource] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api
+      .getProduct(productId)
+      .then(setSource)
+      .catch((err) => setError(err.message));
+  }, [productId]);
+  if (error) return <p className="error">{error}</p>;
+  if (!source) return <p className="muted">Loading…</p>;
+  const supplier = getShop(source.shopId);
+  const initial = {
+    name: source.name,
+    category: source.category,
+    description: source.description ?? '',
+    price: String(Math.ceil(source.price * (1 + RESELL_MARGIN))),
+    stock: '',
+    weightKg: source.weightKg,
+    options: source.options,
+    images: (source.images ?? []).filter((i) => i.startsWith('/uploads/')),
+    sourceProductId: source.id,
+  };
+  return (
+    <>
+      <h2>Resell in my shop</h2>
+      <p className="review-note">
+        ⇄ From <Link to={`/store/${source.shopId}`}>{supplier?.name ?? 'another shop'}</Link> at{' '}
+        <strong>{formatK(source.price)}</strong>. We've added a {RESELL_MARGIN * 100}% margin; change the price, stock and
+        photos as you like. When a customer orders, buy it from the supplier (or use your stock) and send it yourself.
+      </p>
+      <ProductForm initial={initial} onSubmit={onSubmit} submitLabel="List in my shop" />
+    </>
+  );
+}
+
 export default function SellerDashboard() {
   const { user, myShop, shopOrders, addProduct, updateProduct, updateShop } = useStore();
   const [params, setParams] = useSearchParams();
@@ -179,6 +320,7 @@ export default function SellerDashboard() {
   const lowCount = useProductSearch(shopId ? { shop: shopId, lowStock: '1', limit: 1 } : null).total;
   const { product: editProduct } = useProduct(editing);
 
+  if (user?.isAdmin) return <Navigate to="/admin" replace />;
   if (!myShop) {
     return (
       <div className="container section narrow">
@@ -209,6 +351,7 @@ export default function SellerDashboard() {
     ['bulk', 'Bulk upload'],
     ['orders', 'Orders', pending],
     ['reviews', 'Reviews'],
+    ['returns', 'Returns'],
     ['quotes', 'Price requests'],
     ['promotions', 'Promotions'],
     ['report', 'Sales report'],
@@ -243,6 +386,8 @@ export default function SellerDashboard() {
           </div>
         </div>
       </div>
+
+      <ShopNotices />
 
       {lowCount > 0 && tab !== 'report' && (
         <div className="card alert-bar" role="status">
@@ -297,13 +442,26 @@ export default function SellerDashboard() {
 
       {tab === 'add' && (
         <div className="card form-card narrow-card">
-          <h2>Upload a product</h2>
-          <ProductForm
-            onSubmit={async (data) => {
-              await addProduct(data);
-              go({ tab: 'products' });
-            }}
-          />
+          {params.get('resell') ? (
+            <ResellForm
+              key={params.get('resell')}
+              productId={params.get('resell')}
+              onSubmit={async (data) => {
+                await addProduct(data);
+                go({ tab: 'products' });
+              }}
+            />
+          ) : (
+            <>
+              <h2>Upload a product</h2>
+              <ProductForm
+                onSubmit={async (data) => {
+                  await addProduct(data);
+                  go({ tab: 'products' });
+                }}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -316,6 +474,7 @@ export default function SellerDashboard() {
       {tab === 'orders' &&
         (myOrders.length ? (
           <div className="orders">
+            <BatchDispatch orders={myOrders} />
             {myOrders.map(({ order, shipment }) => (
               <OrderCard key={order.id} order={order} shipment={shipment} />
             ))}
@@ -328,12 +487,15 @@ export default function SellerDashboard() {
 
       {tab === 'reviews' && <ShopReviews />}
 
+      {tab === 'returns' && <ShopCases />}
+
       {tab === 'quotes' && <ShopPriceRequests />}
 
       {tab === 'promotions' && <Promotions shopId={myShop.id} />}
 
       {tab === 'report' && (
         <>
+          <SellerPayouts />
           <p className="small">
             <Link to="/seller/statement" className="link">
               🧾 Monthly statement (commission and payouts) →
@@ -346,7 +508,11 @@ export default function SellerDashboard() {
       {tab === 'settings' && (
         <div className="card form-card narrow-card">
           {myShop.ownerId === user.id ? (
-            <ShopForm initial={myShop} submitLabel="Save settings" onSubmit={(shop) => updateShop(myShop.id, shop)} />
+            <>
+              <VerificationPanel />
+              <hr />
+              <ShopForm initial={myShop} submitLabel="Save settings" onSubmit={(shop) => updateShop(myShop.id, shop)} />
+            </>
           ) : (
             <p className="muted">Demo shops can't be edited.</p>
           )}

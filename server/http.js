@@ -17,6 +17,6 @@ export function parse(schema, data) {
 
 export const newId = (prefix) => `${prefix}_${randomBytes(9).toString('base64url')}`;
 
-// Human-friendly order numbers, e.g. AMS-7K2Q9XHD.
+// Human-friendly order numbers, e.g. ZM-7K2Q9XHD.
 export const newOrderId = () =>
-  `AMS-${[...randomBytes(8)].map((b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('')}`;
+  `ZM-${[...randomBytes(8)].map((b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('')}`;

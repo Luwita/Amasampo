@@ -15,7 +15,20 @@ export const groupByShop = (items) =>
   );
 
 export default function Cart() {
-  const { items, subtotal, wholesaleSavings, setQty, removeFromCart, catalogStatus, cartStatus } = useStore();
+  const {
+    items,
+    selectedItems,
+    subtotal,
+    wholesaleSavings,
+    setQty,
+    removeFromCart,
+    toggleSelected,
+    selectAll,
+    removeSelected,
+    saveSelectedForLater,
+    catalogStatus,
+    cartStatus,
+  } = useStore();
 
   if (catalogStatus === 'loading' || cartStatus === 'loading') return null;
 
@@ -35,12 +48,26 @@ export default function Cart() {
   }
 
   const groups = groupByShop(items);
+  const allSelected = selectedItems.length === items.length;
+  const selectedShops = groupByShop(selectedItems).length;
 
   return (
     <div className="container section">
       <h1>Cart ({items.length})</h1>
       <div className="cart-layout">
         <div className="cart-groups">
+          <div className="card cart-batch">
+            <label className="check">
+              <input type="checkbox" checked={allSelected} onChange={() => selectAll(!allSelected)} /> Select all
+            </label>
+            <span className="muted small grow">{selectedItems.length} selected</span>
+            <button className="link-btn" disabled={!selectedItems.length} onClick={saveSelectedForLater}>
+              ♡ Save for later
+            </button>
+            <button className="link-btn danger" disabled={!selectedItems.length} onClick={removeSelected}>
+              Remove selected
+            </button>
+          </div>
           {groups.map(({ shop, items: lines }) => (
             <div key={shop?.id ?? 'unknown'} className="card cart-items">
               {shop && (
@@ -49,10 +76,17 @@ export default function Cart() {
                   <span className="muted small">📍 {formatLocation(shop)}</span>
                 </Link>
               )}
-              {lines.map(({ key, product, choice, qty, price, total, quoteId }) => {
+              {lines.map(({ key, product, choice, qty, price, total, quoteId, selected }) => {
                 const nextTier = !quoteId && product.tiers.find((t) => t.min > qty);
                 return (
-                  <div key={key} className="cart-line">
+                  <div key={key} className={`cart-line ${selected ? '' : 'unselected'}`}>
+                    <input
+                      type="checkbox"
+                      className="cart-check"
+                      checked={selected}
+                      onChange={() => toggleSelected(key)}
+                      aria-label={`Buy ${product.name} now`}
+                    />
                     <Link to={`/product/${product.id}`}>
                       <ProductImage product={product} size="sm" />
                     </Link>
@@ -125,12 +159,21 @@ export default function Cart() {
             <span>Delivery</span>
             <span>Choose at checkout</span>
           </div>
-          {groups.length > 1 && (
-            <p className="muted small">Your items come from {groups.length} shops. Each shop sends its own parcel.</p>
+          {selectedShops > 1 && (
+            <p className="muted small">Your items come from {selectedShops} shops. Each shop sends its own parcel.</p>
           )}
-          <Link to="/checkout" className="btn btn-primary btn-lg btn-block">
-            Checkout
-          </Link>
+          {selectedItems.length ? (
+            <Link to="/checkout" className="btn btn-primary btn-lg btn-block">
+              Checkout ({selectedItems.length})
+            </Link>
+          ) : (
+            <button className="btn btn-primary btn-lg btn-block" disabled>
+              Select items to check out
+            </button>
+          )}
+          {selectedItems.length < items.length && (
+            <p className="muted small">Unticked items stay in your cart for next time.</p>
+          )}
         </aside>
       </div>
     </div>

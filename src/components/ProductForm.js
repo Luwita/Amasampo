@@ -109,6 +109,7 @@ export default function ProductForm({ initial, onSubmit, onCancel, submitLabel =
         local: form.local,
         images: form.images,
         tiers,
+        ...(form.sourceProductId ? { sourceProductId: form.sourceProductId } : {}),
       });
     } catch (err) {
       setErrors({ form: err.message });

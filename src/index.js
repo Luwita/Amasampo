@@ -11,7 +11,7 @@ root.render(
   </React.StrictMode>,
 );
 
-// The service worker (public/sw.js) makes Amasampo installable and usable offline.
+// The service worker (public/sw.js) makes Zed Market installable and usable offline.
 // Only in production builds: in development it would serve stale files while you edit.
 if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {

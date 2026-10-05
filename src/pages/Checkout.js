@@ -5,6 +5,7 @@ import LocationFields from '../components/LocationFields';
 import { useStore } from '../context/StoreContext';
 import { paymentMethods } from '../data/catalog';
 import { formatKg, quotesFor, tooHeavyFor } from '../data/couriers';
+import { pointsIn } from '../data/pickupPoints';
 import { parcelWeight } from '../data/pricing';
 import { formatLocation } from '../data/zambia';
 import { formatK } from '../utils/format';
@@ -14,7 +15,7 @@ const MOBILE_MONEY = ['mtn', 'airtel', 'zamtel'];
 const PHONE = /^(\+?260|0)?[79]\d{8}$/;
 
 export default function Checkout() {
-  const { items, subtotal, user, authReady, catalogStatus, cartStatus, location, placeOrder } = useStore();
+  const { selectedItems: items, subtotal, user, authReady, catalogStatus, cartStatus, location, placeOrder } = useStore();
   const navigate = useNavigate();
   const [form, setForm] = useState({
     name: '',
@@ -31,13 +32,25 @@ export default function Checkout() {
   const [codeInput, setCodeInput] = useState('');
   const [coupon, setCoupon] = useState(null); // { code, priced } once the server has accepted a code
   const [couponState, setCouponState] = useState({ busy: false, error: null });
+  const [vouchers, setVouchers] = useState([]);
+  const [voucherId, setVoucherId] = useState('');
+  const [voucherQuote, setVoucherQuote] = useState({ priced: null, error: null });
+  const [pointId, setPointId] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    api
+      .myVouchers()
+      .then((list) => setVouchers(list.filter((v) => v.usable)))
+      .catch(() => {});
+  }, [user]);
 
   // The signed-in user can arrive after the first render; fill in their details without overwriting typing.
   useEffect(() => {
     if (!user) return;
     setForm((f) => ({
       ...f,
-      name: f.name || (user.name === 'Amasampo Shopper' ? '' : user.name),
+      name: f.name || (user.name === 'Zed Market Shopper' ? '' : user.name),
       phone: f.phone || user.phone,
       momoNumber: f.momoNumber || user.phone,
     }));
@@ -51,7 +64,7 @@ export default function Checkout() {
         const options = quotesFor(shop, to, weightKg);
         const chosen =
           options.find((o) => o.courier.id === picked[shop.id]) ??
-          options.find((o) => o.courier.id !== 'pickup') ??
+          options.find((o) => !['pickup', 'point'].includes(o.courier.id)) ??
           options[0] ??
           null;
         return {
@@ -72,6 +85,10 @@ export default function Checkout() {
     couriers: Object.fromEntries(shipments.filter((s) => s.chosen).map((s) => [s.shop.id, s.chosen.courier.id])),
     payment: form.payment,
   };
+  const points = pointsIn(to);
+  const usesPoint = shipments.some((s) => s.chosen?.courier.id === 'point');
+  const pickupPoint = usesPoint ? (points.find((p) => p.id === pointId) ?? points[0])?.id ?? null : null;
+  cartPayload.pickupPoint = pickupPoint;
   const payloadKey = JSON.stringify({ ...cartPayload, to });
 
   // Keep a discount up to date when the cart, town, couriers or payment change.
@@ -93,6 +110,23 @@ export default function Checkout() {
     };
   }, [appliedCode, payloadKey]);
 
+  // The server works out how much of the voucher applies, and to which parcels.
+  useEffect(() => {
+    if (!voucherId) {
+      setVoucherQuote({ priced: null, error: null });
+      return undefined;
+    }
+    let cancelled = false;
+    const { to: shipping, ...rest } = JSON.parse(payloadKey);
+    api
+      .quoteOrder({ ...rest, shipping, coupon: appliedCode, voucherId })
+      .then((priced) => !cancelled && setVoucherQuote({ priced, error: null }))
+      .catch((err) => !cancelled && setVoucherQuote({ priced: null, error: err.message }));
+    return () => {
+      cancelled = true;
+    };
+  }, [voucherId, appliedCode, payloadKey]);
+
   if (!ready || !authReady) return null;
   if (!items.length && !processing) return <Navigate to="/cart" replace />;
   if (!user) {
@@ -112,7 +146,8 @@ export default function Checkout() {
 
   const delivery = shipments.reduce((sum, s) => sum + (s.chosen?.fee ?? 0), 0);
   const discount = coupon?.priced.discount ?? 0;
-  const total = subtotal - discount + delivery;
+  const voucherDiscount = voucherQuote.priced?.voucherDiscount ?? 0;
+  const total = subtotal - discount - voucherDiscount + delivery;
   const discountFor = (shopId) => coupon?.priced.shipments.find((s) => s.shopId === shopId)?.discount ?? 0;
   const codAllowed = shipments.every((s) => s.chosen?.courier.cod);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -140,6 +175,7 @@ export default function Checkout() {
       errs.momoNumber = 'Enter the Mobile Money number to charge';
     if (form.payment === 'cod' && !codAllowed)
       errs.payment = 'Pay on Delivery is not available with bus parcel or Zampost. Choose another courier or payment.';
+    if (voucherId && voucherQuote.error) errs.voucher = voucherQuote.error;
     if (shipments.some((s) => !s.chosen)) errs.delivery = 'One of the shops cannot deliver to your town';
     setErrors(errs);
     return !Object.keys(errs).length;
@@ -155,6 +191,7 @@ export default function Checkout() {
         ...cartPayload,
         shipping: { name: form.name, phone: form.phone, ...to, address: form.address },
         coupon: coupon?.code,
+        voucherId: voucherId || undefined,
       });
       navigate(`/order/${order.id}`, { replace: true, state: { order } });
     } catch (err) {
@@ -231,6 +268,21 @@ export default function Checkout() {
                 )}
               </div>
             ))}
+            {usesPoint && points.length > 0 && (
+              <div className="field point-picker">
+                <label htmlFor="co-point">📮 Collect from which Zed Market Point?</label>
+                <select id="co-point" value={pickupPoint ?? ''} onChange={(e) => setPointId(e.target.value)}>
+                  {points.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}, {p.address}
+                    </option>
+                  ))}
+                </select>
+                <span className="muted small">
+                  {points.find((p) => p.id === pickupPoint)?.hours}. Bring your order number. We text you when it arrives.
+                </span>
+              </div>
+            )}
           </section>
 
           <section className="card form-card">
@@ -262,7 +314,7 @@ export default function Checkout() {
               </p>
             )}
             <p className="escrow-note">
-              🔒 Your payment is held safely by Amasampo and released to the shop only after you confirm delivery.
+              🔒 Your payment is held safely by Zed Market and released to the shop only after you confirm delivery.
             </p>
           </section>
         </div>
@@ -303,6 +355,25 @@ export default function Checkout() {
             </div>
           ))}
 
+          {voucherDiscount > 0 && (
+            <div className="summary-row green small">
+              <span>Zed Market voucher</span>
+              <span>−{formatK(voucherDiscount)}</span>
+            </div>
+          )}
+          {vouchers.length > 0 && (
+            <div className="coupon-box">
+              <select value={voucherId} onChange={(e) => setVoucherId(e.target.value)} aria-label="Voucher">
+                <option value="">🎁 Use a voucher ({vouchers.length})</option>
+                {vouchers.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {formatK(v.amount)} off orders over {formatK(v.minSpend)}
+                  </option>
+                ))}
+              </select>
+              {(errors.voucher || voucherQuote.error) && <span className="error small">{voucherQuote.error}</span>}
+            </div>
+          )}
           <div className="coupon-box">
             {coupon ? (
               <div className="summary-row small">

@@ -4,6 +4,9 @@ import './App.css';
 import './marketplace.css';
 import './phase2.css';
 import './phase3.css';
+import './admin.css';
+import './features.css';
+import './responsive.css';
 import Footer from './components/Footer';
 import Header from './components/Header';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -16,6 +19,11 @@ import Delivery from './pages/Delivery';
 import { Receipt, Statement } from './pages/Documents';
 import Legal from './pages/Legal';
 import Messages from './pages/Messages';
+import Admin from './pages/Admin';
+import { RequestBoard, RequestDetail } from './pages/BuyingRequests';
+import Help from './pages/Help';
+import Notifications from './pages/Notifications';
+import CasePage from './pages/CasePage';
 import OrderSuccess from './pages/OrderSuccess';
 import ProductDetail from './pages/ProductDetail';
 import Sell from './pages/Sell';
@@ -106,6 +114,8 @@ export default function App() {
             <Route path="/order/:id/receipt" element={<Receipt />} />
             <Route path="/seller/statement" element={<Statement />} />
             <Route path="/messages" element={<Messages />} />
+            <Route path="/cases/:id" element={<CasePage />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="/messages/:id" element={<Messages />} />
             <Route path="/legal/:doc" element={<Legal />} />
             <Route path="/terms" element={<Navigate to="/legal/terms" replace />} />
@@ -116,6 +126,11 @@ export default function App() {
             <Route path="/store/:id" element={<StorePage />} />
             <Route path="/delivery" element={<Delivery />} />
             <Route path="/logistics" element={<Navigate to="/delivery" replace />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/help" element={<Help />} />
+            <Route path="/help/:id" element={<Help />} />
+            <Route path="/requests" element={<RequestBoard />} />
+            <Route path="/requests/:id" element={<RequestDetail />} />
             <Route path="/login" element={<Login />} />
             <Route path="/account" element={<Account />} />
             <Route path="*" element={<NotFound />} />

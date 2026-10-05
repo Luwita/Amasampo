@@ -36,7 +36,7 @@ function setupShopAndBuyer({ shop = {} } = {}) {
     tiers: [{ min: 10, price: 450 }],
   });
   const buyerToken = api.__signIn({ name: 'Chipo', phone: '0966111000' });
-  localStorage.setItem('amasampo.location', JSON.stringify({ province: 'lusaka', town: 'Lusaka' }));
+  localStorage.setItem('zedmarket.location', JSON.stringify({ province: 'lusaka', town: 'Lusaka' }));
   return { sellerToken, buyerToken };
 }
 
@@ -70,7 +70,7 @@ test('a discount code is checked by the server and lowers the total at checkout'
   api.setToken(sellerToken);
   await api.createCoupon({ code: 'FAN10', kind: 'percent', value: 10, minSpend: 800 });
   api.setToken(buyerToken);
-  localStorage.setItem('amasampo.cart', JSON.stringify([{ id: 'prd_fan', qty: 2 }]));
+  localStorage.setItem('zedmarket.cart', JSON.stringify([{ id: 'prd_fan', qty: 2 }]));
 
   renderAt('/checkout');
   type(await screen.findByLabelText('Discount code').then(() => 'Discount code'), 'nope');
@@ -113,7 +113,7 @@ test('wholesale price request: ask, quote, accept, and check out at the agreed p
   expect(await screen.findByText('Agreed price')).toBeInTheDocument();
   expect(screen.getByText('40 units')).toBeInTheDocument(); // quantity is fixed for an agreed price
 
-  fireEvent.click(screen.getByRole('link', { name: 'Checkout' }));
+  fireEvent.click(screen.getByRole('link', { name: /^Checkout/ }));
   type(await screen.findByLabelText('Street address or landmark').then(() => 'Street address or landmark'), 'Plot 9');
   fireEvent.click(screen.getByLabelText(/Collect from shop/));
   fireEvent.click(screen.getByRole('button', { name: 'Pay K16,000' })); // 40 × K400, not the K450 tier
@@ -139,7 +139,7 @@ test('the receipt shows the shop TPIN and the VAT included', async () => {
 test('low-data mode skips product photos until tapped', async () => {
   setupShopAndBuyer();
   api.__db().products.find((p) => p.id === 'prd_fan').images = ['/uploads/fan.jpg'];
-  localStorage.setItem('amasampo.lowData', 'true');
+  localStorage.setItem('zedmarket.lowData', 'true');
   renderAt('/product/prd_fan');
   const reveal = await screen.findByRole('button', { name: '📷 Tap to load photo' });
   expect(document.querySelector('.pdp-gallery img')).toBeNull();

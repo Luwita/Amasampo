@@ -9,7 +9,7 @@ const renderAt = (path) => {
 
 const type = (label, value, options) => fireEvent.change(screen.getByLabelText(label, options), { target: { value } });
 
-test('renders the Amasampo storefront with products from the API', async () => {
+test('renders the Zed Market storefront with products from the API', async () => {
   renderAt('/');
   expect(screen.getByRole('search')).toBeInTheDocument();
   expect(await screen.findAllByText(/Tecno Spark 20 Pro/)).not.toHaveLength(0);
@@ -38,13 +38,16 @@ test('signing up as a shop owner with an SMS code leads to shop setup, then uplo
   // Lands on shop setup with name and phone filled in.
   expect(await screen.findByRole('heading', { name: 'Open your shop', level: 2 })).toBeInTheDocument();
   expect(window.location.pathname).toBe('/sell');
-  expect(screen.getByLabelText('Your name')).toHaveValue('Mwansa Banda');
+  expect(screen.getByLabelText('Your full name (as on your NRC)')).toHaveValue('Mwansa Banda');
   expect(screen.getByLabelText('Phone (WhatsApp)')).toHaveValue('0977123456');
 
   type('Shop name', 'Mwansa Hardware');
   type('Province', 'eastern', { selector: '#shop-province' });
   type('Street, market or area', 'Chipata Market');
-  fireEvent.click(screen.getByRole('button', { name: 'Open my shop' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send my application' }));
+  expect(await screen.findByText('Enter your NRC number like 123456/78/1')).toBeInTheDocument();
+  type('NRC number', '123456/78/1');
+  fireEvent.click(screen.getByRole('button', { name: 'Send my application' }));
 
   expect(await screen.findByRole('heading', { name: 'Upload a product' })).toBeInTheDocument();
   type('Product name', 'Hoe Handle (Mukwa)');
@@ -59,13 +62,47 @@ test('signing up as a shop owner with an SMS code leads to shop setup, then uplo
   await waitFor(() => expect(document.querySelector('.seller-products')).toBeInTheDocument());
   expect(within(document.querySelector('.seller-products')).getByText('Hoe Handle (Mukwa)')).toBeInTheDocument();
   expect(api.__db().products.find((p) => p.name === 'Hoe Handle (Mukwa)').price).toBe(75);
+  expect(screen.getByText(/Your shop is waiting for approval/)).toBeInTheDocument();
+});
 
-  fireEvent.click(screen.getAllByRole('link', { name: 'Eastern' })[0]);
-  expect((await screen.findAllByText('Hoe Handle (Mukwa)')).length).toBeGreaterThan(0);
+test('a new shop and its products stay hidden from buyers until staff approve it', async () => {
+  api.__signIn({ name: 'Mwansa', phone: '0977123456', accountType: 'seller' });
+  await api.createShop({
+    name: 'Mwansa Hardware',
+    phone: '0977123456',
+    province: 'eastern',
+    town: 'Chipata',
+    area: 'Chipata Market',
+    couriers: ['pickup', 'bus'],
+    ownerFullName: 'Mwansa Banda',
+    nrc: '123456/78/1',
+  });
+  await api.createProduct({ name: 'Hoe Handle (Mukwa)', category: 'agri', price: 75, stock: 40, weightKg: 1.2 });
+  const shop = api.__db().shops.find((s) => s.name === 'Mwansa Hardware');
+
+  // A buyer browsing Eastern Province doesn't see it yet.
+  api.__signIn({ name: 'Chanda', phone: '0966000111' });
+  const before = renderAt('/shop?prov=eastern');
+  expect(await screen.findByText(/products in Eastern Province/)).toBeInTheDocument();
+  expect(screen.queryByText('Hoe Handle (Mukwa)')).not.toBeInTheDocument();
+  before.unmount();
+
+  // Staff approve it in the admin panel.
+  api.__signIn({ name: 'Staff', phone: '0950000001', admin: true });
+  const staff = renderAt('/admin?tab=shops');
+  const card = (await screen.findByRole('link', { name: 'Mwansa Hardware' })).closest('.order');
+  expect(within(card).getByText(/123456\/78\/1/)).toBeInTheDocument();
+  fireEvent.click(within(card).getByRole('button', { name: '✓ Approve' }));
+  await waitFor(() => expect(shop.verification).toBe('verified'));
+  staff.unmount();
+
+  api.__signIn({ name: 'Chanda', phone: '0966000111' });
+  renderAt('/shop?prov=eastern');
+  expect(await screen.findByText('Hoe Handle (Mukwa)')).toBeInTheDocument();
 });
 
 test('checkout asks guests to sign in first', async () => {
-  localStorage.setItem('amasampo.cart', JSON.stringify([{ id: 'p1', qty: 1 }]));
+  localStorage.setItem('zedmarket.cart', JSON.stringify([{ id: 'p1', qty: 1 }]));
   renderAt('/checkout');
   expect(await screen.findByText('Sign in to check out')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Sign in with your phone' })).toHaveAttribute(
@@ -98,8 +135,8 @@ test('buyer checks out with a courier and the shop owner dispatches the order', 
     stock: 10,
   });
   api.__signIn({ name: 'Chanda Phiri', phone: '0977000111' });
-  localStorage.setItem('amasampo.location', JSON.stringify({ province: 'copperbelt', town: 'Kitwe' }));
-  localStorage.setItem('amasampo.cart', JSON.stringify([{ id: 'prd_charger', qty: 2 }]));
+  localStorage.setItem('zedmarket.location', JSON.stringify({ province: 'copperbelt', town: 'Kitwe' }));
+  localStorage.setItem('zedmarket.cart', JSON.stringify([{ id: 'prd_charger', qty: 2 }]));
 
   const buyer = renderAt('/checkout');
   expect(await screen.findByLabelText(/Yango Delivery/)).toBeChecked(); // cheapest door delivery is preselected
@@ -129,18 +166,18 @@ test('products with sizes ask the buyer to choose before adding to cart', async 
   expect(await screen.findByRole('radiogroup', { name: 'Size' })).toBeInTheDocument();
   fireEvent.click(within(document.querySelector('.pdp-buttons')).getByRole('button', { name: 'Add to cart' }));
   expect(screen.getByText('Choose a size')).toBeInTheDocument();
-  expect(JSON.parse(localStorage.getItem('amasampo.cart'))).toEqual([]);
+  expect(JSON.parse(localStorage.getItem('zedmarket.cart'))).toEqual([]);
 
   fireEvent.click(screen.getByRole('radio', { name: 'M' }));
   fireEvent.click(within(document.querySelector('.pdp-buttons')).getByRole('button', { name: 'Add to cart' }));
-  expect(JSON.parse(localStorage.getItem('amasampo.cart'))).toEqual([{ id: 'p16', qty: 1, options: { Size: 'M' } }]);
+  expect(JSON.parse(localStorage.getItem('zedmarket.cart'))).toEqual([{ id: 'p16', qty: 1, options: { Size: 'M' } }]);
 
   fireEvent.click(screen.getByRole('link', { name: /Cart/ }));
   expect(await screen.findByText('Size: M')).toBeInTheDocument();
 });
 
 test('delivery prices on the product page follow the quantity being bought', async () => {
-  localStorage.setItem('amasampo.location', JSON.stringify({ province: 'lusaka', town: 'Lusaka' }));
+  localStorage.setItem('zedmarket.location', JSON.stringify({ province: 'lusaka', town: 'Lusaka' }));
   renderAt('/product/p12'); // 25 kg lithium battery from Ndola
   expect(await screen.findByText(/Prices for 25 kg/)).toBeInTheDocument();
   expect(screen.getByText(/Too heavy for/)).toBeInTheDocument();

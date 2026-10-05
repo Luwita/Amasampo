@@ -1,0 +1,286 @@
+/* Responsive layer: loaded last. Makes every page use the full width of the device, from small phones to
+   large monitors, while keeping text-heavy pages (forms, legal, receipts) at a comfortable reading width. */
+
+:root {
+  /* Side margin grows with the screen; respects phone notches when installed as an app. */
+  --gutter: clamp(12px, 3vw, 48px);
+  /* Narrowest product card before the grid adds or removes a column. */
+  --card-min: clamp(150px, 40vw, 210px);
+}
+
+html {
+  font-size: clamp(15px, 14px + 0.15vw, 17px);
+}
+
+/* Footer stays at the bottom of the screen even on short pages. */
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+#root > main {
+  flex: 1 0 auto;
+}
+
+.container {
+  max-width: none;
+  padding-left: max(var(--gutter), env(safe-area-inset-left));
+  padding-right: max(var(--gutter), env(safe-area-inset-right));
+}
+/* Forms, legal pages, receipts: easy-to-read width. */
+.container.narrow {
+  max-width: 760px;
+}
+.site-header {
+  padding-top: env(safe-area-inset-top);
+}
+.site-footer {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+img {
+  max-width: 100%;
+}
+
+/* ---------- Grids that add columns as the screen grows ---------- */
+.grid-6,
+.grid-4 {
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
+}
+.cat-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(130px, 28vw), 1fr));
+}
+.province-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 42vw), 1fr));
+}
+.shop-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+}
+.perk-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+}
+.promises {
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+.tiles {
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 45%), 1fr));
+}
+.steps {
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+}
+.footer-grid {
+  grid-template-columns: minmax(240px, 2fr) repeat(auto-fit, minmax(160px, 1fr));
+}
+
+/* ---------- Home hero: side panels on wide screens, taller on big monitors ---------- */
+.hero {
+  min-height: clamp(260px, 26vw, 520px);
+}
+@media (min-width: 1101px) {
+  .hero-grid {
+    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr) minmax(230px, 320px);
+  }
+}
+
+/* ---------- Product page ----------
+   Phones: one column. Laptops: photo | details, with seller and delivery under the details.
+   Very wide screens: photo | details | seller and delivery. */
+.pdp-grid {
+  grid-template-columns: minmax(0, min(46vw, 760px)) minmax(0, 1fr);
+  column-gap: clamp(20px, 2.5vw, 40px);
+}
+.pdp-gallery {
+  grid-row: span 2;
+}
+.pdp-aside {
+  grid-column: 2;
+  min-width: 0;
+}
+.pdp-aside > .seller-box:first-child {
+  margin-top: 0;
+}
+@media (min-width: 1700px) {
+  .pdp-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(340px, 0.8fr);
+  }
+  .pdp-gallery {
+    grid-row: auto;
+  }
+  .pdp-aside {
+    grid-column: 3;
+  }
+}
+.pdp-gallery .product-img-lg {
+  max-height: min(70vh, 760px);
+  margin: 0 auto;
+}
+
+/* ---------- Shop, cart, checkout ---------- */
+.shop-layout {
+  grid-template-columns: clamp(220px, 18vw, 300px) minmax(0, 1fr);
+}
+.cart-layout {
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 420px);
+}
+
+/* ---------- Messages use the full height of the screen ---------- */
+.messages-layout {
+  grid-template-columns: clamp(260px, 24vw, 380px) minmax(0, 1fr);
+  height: calc(100dvh - 260px);
+  min-height: 420px;
+}
+.conversation-list,
+.bubbles {
+  max-height: none;
+}
+.thread-wrap,
+.conversation-list {
+  min-height: 0;
+  height: 100%;
+}
+.bubbles {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------- Tablets and phones ---------- */
+@media (max-width: 1100px) {
+  .shop-layout,
+  .cart-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .filters,
+  .summary {
+    position: static;
+  }
+}
+
+@media (max-width: 820px) {
+  .pdp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pdp-gallery {
+    grid-row: auto;
+  }
+  .pdp-aside {
+    grid-column: auto;
+  }
+  .pdp-gallery .product-img-lg {
+    max-height: 48vh;
+  }
+  .messages-layout {
+    grid-template-columns: minmax(0, 1fr);
+    height: calc(100dvh - 210px);
+  }
+  /* Slimmer header: one-line top banner, location next to the search on its own short row. */
+  .topbar-inner > span:first-child {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .header-main {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .footer-grid > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar {
+    font-size: 0.72rem;
+  }
+  .hero {
+    min-height: 220px;
+  }
+  .section {
+    margin-top: 22px;
+  }
+  .document,
+  .form-card {
+    padding: 16px;
+  }
+  .card-actions .btn {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
+/* ---------- Header on phones: compact icons; location shares a row with the search ---------- */
+@media (max-width: 820px) {
+  .header-actions {
+    gap: 12px;
+  }
+  .loc-wrap {
+    order: 3;
+  }
+  .search {
+    order: 4;
+    flex: 1 1 220px;
+  }
+  .loc-btn {
+    flex-direction: column;
+    gap: 0;
+    padding: 2px 4px;
+  }
+}
+@media (max-width: 420px) {
+  .action-saved {
+    display: none; /* still reachable from My account */
+  }
+  .header-actions {
+    gap: 10px;
+  }
+}
+
+/* Long text in tight rows: wrap the row rather than push past the screen edge. */
+.low-stock li,
+.seller-product,
+.order-head,
+.review-head {
+  flex-wrap: wrap;
+}
+.low-stock li .grow {
+  min-width: 140px;
+}
+.inline-fields select {
+  min-width: 0;
+}
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stacked card lists: never wider than the screen, whatever wide content (tables, long words) they hold. */
+.promotions,
+.orders,
+.cart-groups {
+  grid-template-columns: minmax(0, 1fr);
+}
+.report-grid > *,
+.form-grid > * {
+  min-width: 0;
+}
+
+/* Home "promises": two by two on phones instead of four full-width boxes. */
+@media (max-width: 520px) {
+  .promises {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .promise {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 12px;
+  }
+  .promise p {
+    font-size: 0.75rem;
+  }
+}

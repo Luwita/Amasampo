@@ -1,3 +1,5 @@
+import { pointsIn } from './pickupPoints.js';
+
 // Zambian delivery options a shop can offer. Fees (ZMW) and times are indicative
 // placeholders per distance band. Replace them with the rates agreed with each courier.
 //   town     = seller and buyer in the same town
@@ -73,9 +75,28 @@ export const couriers = [
     eta: { town: '1–2 days', province: '2–3 days', national: '3–5 days' },
     cod: false,
   },
+  {
+    // Offered for every shop: the shop sends the parcel to a Zed Market Point in the buyer's town.
+    id: 'point',
+    name: 'Zed Market Point',
+    icon: '📍',
+    description: "Your parcel waits at a Zed Market collection point in your town. Collect it with your order number.",
+    rates: { town: 20, province: 55, national: 90 },
+    perKg: { town: 1, province: 3, national: 4 },
+    maxKg: 60,
+    eta: { town: 'Next day', province: '1–3 days', national: '2–5 days' },
+    cod: true,
+    network: true,
+  },
 ];
 
 export const getCourier = (id) => couriers.find((c) => c.id === id);
+
+// Options a shop chooses itself (Zed Market Points are offered for every shop).
+export const shopCouriers = couriers.filter((c) => !c.network);
+
+// Every delivery option open for a shop's parcels: its own choices plus the Zed Market network.
+export const offeredBy = (shop) => [...new Set([...shop.couriers, ...couriers.filter((c) => c.network).map((c) => c.id)])];
 
 export function band(from, to) {
   if (from.province === to.province && from.town === to.town) return 'town';
@@ -92,6 +113,7 @@ export function quote(courierId, shop, to, weightKg = 1) {
   const b = band(shop, to);
   if (courier.towns && (b !== 'town' || !courier.towns.includes(shop.town))) return null;
   if (courier.maxKg && weightKg > courier.maxKg) return null;
+  if (courier.id === 'point' && !pointsIn(to).length) return null;
   const rates = courier.id === 'seller' && shop.ownRates ? { ...courier.rates, ...shop.ownRates } : courier.rates;
   if (rates[b] === undefined || rates[b] === null || rates[b] === '') return null;
   const extraKg = Math.max(0, Math.ceil(weightKg - INCLUDED_KG));
@@ -101,7 +123,7 @@ export function quote(courierId, shop, to, weightKg = 1) {
 
 // All options a shop offers to a buyer location for a parcel weight, cheapest first.
 export function quotesFor(shop, to, weightKg = 1) {
-  return shop.couriers
+  return offeredBy(shop)
     .map((id) => quote(id, shop, to, weightKg))
     .filter(Boolean)
     .sort((a, b) => a.fee - b.fee);
@@ -113,6 +135,8 @@ export const bestDelivery = (shop, to, weightKg = 1) =>
 
 // Couriers that can't take a parcel this heavy, for explaining missing options.
 export const tooHeavyFor = (shop, weightKg) =>
-  shop.couriers.map(getCourier).filter((c) => c?.maxKg && weightKg > c.maxKg);
+  offeredBy(shop)
+    .map(getCourier)
+    .filter((c) => c?.maxKg && weightKg > c.maxKg);
 
 export const formatKg = (kg) => (kg >= 10 ? `${Math.round(kg)} kg` : `${Number(kg.toFixed(1))} kg`);

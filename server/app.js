@@ -5,14 +5,23 @@ import { authRoutes, authenticate } from './auth.js';
 import { HttpError } from './http.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { accountRoutes } from './routes/account.js';
+import { adminRoutes } from './routes/admin.js';
+import { buyingRequestRoutes } from './routes/buyingRequests.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { supportAdminRoutes, supportRoutes } from './routes/support.js';
+import { voucherRoutes } from './routes/vouchers.js';
+import { caseRoutes } from './routes/cases.js';
 import { messageRoutes } from './routes/messages.js';
 import { orderRoutes } from './routes/orders.js';
 import { priceRequestRoutes } from './routes/priceRequests.js';
 import { promotionRoutes } from './routes/promotions.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { sellerRoutes } from './routes/seller.js';
+import { adminToolRoutes, bannerRoutes } from './routes/adminTools.js';
+import { adminControlRoutes } from './routes/adminControl.js';
+import { getSettings } from './settings.js';
 
-export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false } = {}) {
+export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, adminPhones = [] } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '3mb' })); // room for one base64 photo
@@ -22,8 +31,8 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false } 
     res.json({ ok: true, db: db.kind });
   });
 
-  app.use('/api', authenticate(db));
-  app.use('/api/auth', authRoutes(db, { sms, exposeCodes }));
+  app.use('/api', authenticate(db, { adminPhones }));
+  app.use('/api/auth', authRoutes(db, { sms, exposeCodes, adminPhones }));
   app.use('/api', catalogRoutes(db, { uploadDir }));
   app.use('/api', reviewRoutes(db));
   app.use('/api/orders', orderRoutes(db));
@@ -32,6 +41,18 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false } 
   app.use('/api/conversations', messageRoutes(db));
   app.use('/api/price-requests', priceRequestRoutes(db));
   app.use('/api/me', accountRoutes(db));
+  app.use('/api/cases', caseRoutes(db));
+  app.use('/api/admin/support', supportAdminRoutes(db));
+  app.use('/api/admin', adminToolRoutes(db));
+  app.use('/api/admin', adminControlRoutes(db, { adminPhones }));
+  app.use('/api/banners', bannerRoutes(db));
+  // Public: commission rate and voucher amounts, shown in the seller terms and on the invite page.
+  app.get('/api/settings', async (_req, res) => res.json(await getSettings(db)));
+  app.use('/api/admin', adminRoutes(db, { adminPhones }));
+  app.use('/api/notifications', notificationRoutes(db));
+  app.use('/api/support', supportRoutes(db));
+  app.use('/api/buying-requests', buyingRequestRoutes(db));
+  app.use('/api/me', voucherRoutes(db));
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
   app.use('/uploads', express.static(uploadDir, { maxAge: '30d', immutable: true }));

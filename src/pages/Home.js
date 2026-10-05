@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as api from '../api';
-import ProductCard from '../components/ProductCard';
+import { ProductRow } from '../components/ProductGrid';
 import { useStore } from '../context/StoreContext';
+import { bannerThemes } from '../data/bannerThemes';
 import { categories } from '../data/catalog';
 import { getProvince, provinces } from '../data/zambia';
 import { useProductSearch } from '../hooks/useProducts';
 
-const slides = [
+const standardSlides = [
   {
     title: 'Beat load-shedding',
     text: 'Solar panels, inverters & lithium batteries from trusted local shops at wholesale Kwacha prices.',
@@ -45,6 +46,7 @@ export default function Home() {
   const { shops, location, lowData } = useStore();
   const [slide, setSlide] = useState(0);
   const [stats, setStats] = useState({});
+  const [banners, setBanners] = useState([]);
 
   useEffect(() => {
     api
@@ -53,11 +55,24 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  // Campaign banners set by Zed Market staff come before the standard slides.
+  useEffect(() => {
+    api
+      .banners()
+      .then((list) =>
+        setBanners(
+          list.map((b) => ({ title: b.title, text: b.text, cta: b.cta, to: b.link, bg: bannerThemes[b.theme], image: b.image })),
+        ),
+      )
+      .catch(() => {});
+  }, []);
+  const slides = [...banners, ...standardSlides];
+
   useEffect(() => {
     if (lowData) return undefined; // no automatic carousel in low-data mode
     const t = setInterval(() => setSlide((s) => (s + 1) % slides.length), 6000);
     return () => clearInterval(t);
-  }, [lowData]);
+  }, [lowData, slides.length]);
 
   const province = getProvince(location.province);
   const near = useProductSearch({
@@ -65,15 +80,15 @@ export default function Home() {
     sort: 'nearest',
     nearProv: location.province,
     nearTown: location.town,
-    limit: 6,
+    limit: 12,
   }).items;
-  const deals = useProductSearch({ sort: 'deals', limit: 6 }).items;
-  const featured = useProductSearch({ featured: '1', sort: 'popular', limit: 6 }).items;
-  const local = useProductSearch({ local: '1', sort: 'popular', limit: 6 }).items;
-  const popular = useProductSearch({ sort: 'popular', limit: 12 }).items;
+  const deals = useProductSearch({ sort: 'deals', limit: 12 }).items;
+  const featured = useProductSearch({ featured: '1', sort: 'popular', limit: 12 }).items;
+  const local = useProductSearch({ local: '1', sort: 'popular', limit: 12 }).items;
+  const popular = useProductSearch({ sort: 'popular', limit: 24 }).items;
   const shopsNearby = shops.filter((s) => s.province === location.province).length;
 
-  const s = slides[slide];
+  const s = slides[slide % slides.length];
 
   return (
     <div className="home">
@@ -89,19 +104,23 @@ export default function Home() {
 
         <div className="hero" style={{ background: s.bg }}>
           <div className="hero-copy">
-            <span className="hero-kicker">AMASAMPO · Zambia's marketplace</span>
+            <span className="hero-kicker">ZED MARKET · Zambia's marketplace</span>
             <h1>{s.title}</h1>
             <p>{s.text}</p>
             <Link to={s.to} className="btn btn-light">
               {s.cta} →
             </Link>
           </div>
-          <div className="hero-icon">{s.icon}</div>
+          {s.image && !lowData ? (
+            <img className="hero-image" src={s.image} alt="" />
+          ) : (
+            s.icon && <div className="hero-icon">{s.icon}</div>
+          )}
           <div className="dots">
             {slides.map((_, i) => (
               <button
                 key={i}
-                className={i === slide ? 'on' : ''}
+                className={i === slide % slides.length ? 'on' : ''}
                 aria-label={`Slide ${i + 1}`}
                 onClick={() => setSlide(i)}
               />
@@ -151,11 +170,7 @@ export default function Home() {
             <h2>📍 Near you in {province?.name}</h2>
             <Link to={`/shop?prov=${location.province}`}>See all →</Link>
           </div>
-          <div className="grid grid-6">
-            {near.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          <ProductRow items={near} />
         </section>
       )}
 
@@ -165,11 +180,7 @@ export default function Home() {
             <h2>⭐ Featured by shops</h2>
             <span className="muted small">Promoted by the shops that sell them</span>
           </div>
-          <div className="grid grid-6">
-            {featured.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          <ProductRow items={featured} />
         </section>
       )}
 
@@ -178,11 +189,7 @@ export default function Home() {
           <h2>⚡ Flash deals</h2>
           <Link to="/shop?sort=deals">See all →</Link>
         </div>
-        <div className="grid grid-6">
-          {deals.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+        <ProductRow items={deals} />
       </section>
 
       <section className="container section">
@@ -241,11 +248,7 @@ export default function Home() {
           <h2>🇿🇲 Made in Zambia</h2>
           <Link to="/shop?local=1">See all →</Link>
         </div>
-        <div className="grid grid-6">
-          {local.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+        <ProductRow items={local} />
       </section>
 
       <section className="container section">
@@ -253,11 +256,7 @@ export default function Home() {
           <h2>Popular across Zambia</h2>
           <Link to="/shop?sort=popular">See all →</Link>
         </div>
-        <div className="grid grid-6">
-          {popular.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+        <ProductRow items={popular} rows={2} />
       </section>
     </div>
   );

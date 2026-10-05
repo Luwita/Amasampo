@@ -5,8 +5,8 @@ import { useStore } from '../context/StoreContext';
 const steps = [
   {
     n: 1,
-    title: 'Open your shop',
-    text: 'Register your shop name, location and the couriers you use. It takes 2 minutes.',
+    title: 'Apply',
+    text: 'Tell us about you and your shop. We review every new shop, usually within 2 working days.',
   },
   {
     n: 2,
@@ -38,7 +38,7 @@ const perks = [
     title: 'Sell retail & wholesale',
     text: 'Set bulk prices so shop owners in other provinces can stock up from you.',
   },
-  { icon: '🤝', title: '1-on-1 support', text: 'An Amasampo agent helps you list products and get your first sales.' },
+  { icon: '🤝', title: '1-on-1 support', text: 'A Zed Market agent helps you list products and get your first sales.' },
   { icon: '💸', title: 'Fast payouts', text: 'MTN, Airtel, Zamtel or bank, within 48 hours of delivery.' },
 ];
 
@@ -50,7 +50,7 @@ export default function Sell() {
     <div className="sell">
       <section className="page-hero sell-hero">
         <div className="container">
-          <span className="hero-kicker">Sell on Amasampo</span>
+          <span className="hero-kicker">Sell on Zed Market</span>
           <h1>Bring your shop online and sell across Zambia</h1>
           <p>
             Whether you trade at Kamwala, Chisokone, Mongu Harbour or from home, upload your products and reach buyers
@@ -98,8 +98,12 @@ export default function Sell() {
           {myShop ? (
             <div className="success">
               <div className="success-icon">✓</div>
-              <h2>{myShop.name} is open</h2>
-              <p>Add products and manage orders from your dashboard.</p>
+              <h2>{myShop.verified ? `${myShop.name} is live` : `${myShop.name} is waiting for approval`}</h2>
+              <p>
+                {myShop.verified
+                  ? 'Add products and manage orders from your dashboard.'
+                  : 'You can add products now. They go live as soon as Zed Market approves your shop.'}
+              </p>
               <Link to="/seller" className="btn btn-primary">
                 Go to dashboard
               </Link>
@@ -114,13 +118,23 @@ export default function Sell() {
                 Continue with my phone number
               </Link>
             </div>
+          ) : user.isAdmin ? (
+            <div className="empty">
+              <h2>Staff accounts can't have a shop</h2>
+              <p className="muted">
+                You're signed in as Zed Market staff. To sell on Zed Market, sign in with a different phone number.
+              </p>
+              <Link to="/admin" className="btn btn-primary">
+                Go to the admin panel
+              </Link>
+            </div>
           ) : (
             <>
               <h2>Open your shop</h2>
               <ShopForm
                 withOwner
-                initial={{ ownerName: user.name === 'Amasampo Shopper' ? '' : user.name, phone: user.phone }}
-                submitLabel="Open my shop"
+                initial={{ ownerName: user.name === 'Zed Market Shopper' ? '' : user.name, phone: user.phone }}
+                submitLabel="Send my application"
                 onSubmit={async (shop, owner) => {
                   await registerShop(shop, owner);
                   navigate('/seller?tab=add');

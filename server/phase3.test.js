@@ -17,7 +17,7 @@ before(async () => {
   db = await createDb({ url: '', dataDir: '' });
   await migrate(db);
   await seedIfEmpty(db);
-  uploadDir = await mkdtemp(path.join(tmpdir(), 'amasampo-p3-'));
+  uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-p3-'));
   server = createApp(db, { uploadDir, sms: { send: async (phone, message) => sent.push({ phone, message }) } }).listen(
     0,
   );
@@ -66,6 +66,8 @@ async function setupShop() {
     '/api/shops',
     {
       name: 'Mutinta Appliances',
+      ownerFullName: 'Test Owner',
+      nrc: '123456/78/1',
       phone: '0977700700',
       province: 'lusaka',
       town: 'Lusaka',
@@ -78,6 +80,7 @@ async function setupShop() {
   );
   assert.equal(shop.status, 201, JSON.stringify(shop.body));
   seller.shopId = shop.body.id;
+  await db.query(`UPDATE shops SET verification = 'verified' WHERE id = $1`, [seller.shopId]);
   const fan = await api(
     'POST',
     '/api/products',

@@ -4,6 +4,7 @@ import { categories, seedProducts } from '../data/catalog';
 import { band, bandRank } from '../data/couriers';
 import { priceOrder, OrderError } from '../data/pricing';
 import { expandSearch } from '../data/search';
+import { VOUCHER_MIN_SPEND, WELCOME_VOUCHER } from '../data/fees';
 import { seedShops } from '../data/shops';
 import { normalizePhone } from '../utils/format';
 
@@ -30,16 +31,39 @@ export function __reset() {
     conversations: [],
     coupons: [],
     priceRequests: [],
+    cases: [],
+    refunds: [],
+    actions: [],
+    notifications: [],
+    tickets: [],
+    requests: [],
+    vouchers: [],
   };
   token = null;
 }
 __reset();
 
 const copy = (v) => JSON.parse(JSON.stringify(v));
+const isLiveShop = (s) => (s.verification ?? 'verified') === 'verified' && !s.suspended;
+const viewer = () => {
+  try {
+    return currentUser();
+  } catch {
+    return null;
+  }
+};
+const visibleShop = (s) => s && (isLiveShop(s) || s.ownerId === viewer()?.id);
 const currentUser = () => {
   const user = db.users.find((u) => u.id === db.sessions[token]);
   if (!user) throw new ApiError(401, 'Please sign in first');
-  return { ...user, shopId: db.shops.find((s) => s.ownerId === user.id)?.id ?? null };
+  const isAdmin = !!user.admin || !!user.staff;
+  return {
+    ...user,
+    isAdmin,
+    staffRole: user.admin ? 'owner' : user.staff ? 'staff' : null,
+    // Staff accounts never act as a shop.
+    shopId: isAdmin ? null : (db.shops.find((s) => s.ownerId === user.id)?.id ?? null),
+  };
 };
 const myShop = () => {
   const shop = db.shops.find((s) => s.ownerId === currentUser().id);
@@ -48,12 +72,27 @@ const myShop = () => {
 };
 
 // Test helpers: start a test already signed in, optionally as the owner of a shop.
-export function __signIn({ name = 'Test User', phone = '0977000111', accountType = 'buyer', shop } = {}) {
-  const user = { id: `usr_${db.users.length + 1}`, name, phone, accountType };
+export function __signIn({
+  name = 'Test User',
+  phone = '0977000111',
+  accountType = 'buyer',
+  shop,
+  admin = false,
+} = {}) {
+  const user = { id: `usr_${db.users.length + 1}`, name, phone, accountType, admin, referralCode: `ZMTEST${db.users.length + 1}` };
   db.users.push(user);
   token = `tok_${user.id}`;
   db.sessions[token] = user.id;
-  if (shop) db.shops.push({ since: 2026, rating: 0, ownRates: null, ...shop, ownerId: user.id });
+  if (shop)
+    db.shops.push({
+      since: 2026,
+      rating: 0,
+      ownRates: null,
+      verification: 'verified',
+      verified: true,
+      ...shop,
+      ownerId: user.id,
+    });
   return token;
 }
 export const __addProduct = (product) =>
@@ -80,16 +119,22 @@ export async function requestCode(phone) {
   return { sent: true, devCode: FAKE_CODE };
 }
 
-export async function verifyCode({ phone, code, name, accountType }) {
+export async function verifyCode({ phone, code, name, accountType, referralCode }) {
   if (code !== FAKE_CODE) throw new ApiError(400, 'That code is not correct');
   let user = db.users.find((u) => normalizePhone(u.phone) === normalizePhone(phone));
   if (!user) {
     user = {
       id: `usr_${db.users.length + 1}`,
-      name: name || 'Amasampo Shopper',
+      name: name || 'Zed Market Shopper',
       phone: `0${normalizePhone(phone)}`,
       accountType: accountType ?? 'buyer',
+      referralCode: `ZM${String(db.users.length + 1).padStart(6, '0')}`,
     };
+    const inviter = referralCode && db.users.find((u) => u.referralCode === referralCode.toUpperCase());
+    if (inviter) {
+      user.referredBy = inviter.id;
+      db.vouchers.push(newVoucher(user.id, WELCOME_VOUCHER, 'welcome'));
+    }
     db.users.push(user);
   }
   const t = `tok_${user.id}_${Date.now()}`;
@@ -106,7 +151,9 @@ export const logout = async () => {
 
 const live = () => db.products.filter((p) => !p.deletedAt);
 export const getShops = async () =>
-  copy(db.shops.map((s) => ({ ...s, productCount: live().filter((p) => p.shopId === s.id).length })));
+  copy(
+    db.shops.filter(visibleShop).map((s) => ({ ...s, productCount: live().filter((p) => p.shopId === s.id).length })),
+  );
 
 // Same filters and sorts as the server's search, without the typo tolerance.
 export async function searchProducts(f = {}) {
@@ -115,6 +162,7 @@ export async function searchProducts(f = {}) {
   let items = live().filter((p) => {
     const shop = shopOf(p);
     return (
+      visibleShop(shop) &&
       (!f.ids || f.ids.split(',').includes(p.id)) &&
       (!terms || terms.some((t) => p.name.toLowerCase().includes(t) || p.category === t)) &&
       (!f.cat || p.category === f.cat) &&
@@ -142,7 +190,7 @@ export async function searchProducts(f = {}) {
 }
 
 export async function getProduct(id) {
-  const p = live().find((x) => x.id === id);
+  const p = live().find((x) => x.id === id && visibleShop(db.shops.find((s) => s.id === x.shopId)));
   if (!p) throw new ApiError(404, 'Product not found');
   return copy(p);
 }
@@ -158,10 +206,20 @@ export async function provinceStats() {
 }
 
 export async function createShop({ ownerName, ...shop }) {
+  if (currentUser().isAdmin) throw new ApiError(403, "Zed Market staff accounts can't open a shop");
+  if (!/^\d{6}\/\d{2}\/\d$/.test(shop.nrc ?? '')) throw new ApiError(400, 'Enter your NRC number like 123456/78/1');
   const user = db.users.find((u) => u.id === currentUser().id);
   if (ownerName) user.name = ownerName;
   user.accountType = 'seller';
-  const created = { ...shop, id: `shop_${db.shops.length + 1}`, ownerId: user.id, rating: 0, since: 2026 };
+  const created = {
+    ...shop,
+    id: `shop_${db.shops.length + 1}`,
+    ownerId: user.id,
+    rating: 0,
+    since: 2026,
+    verification: 'pending',
+    verified: false,
+  };
   db.shops.push(created);
   return copy(created);
 }
@@ -282,8 +340,21 @@ export async function sellerReport() {
   };
 }
 
-// Same pricing as the server, including discount codes and agreed prices.
-function priceFor(user, { items, shipping, couriers, payment, coupon }) {
+const newVoucher = (userId, amount, reason) => ({
+  id: `vch_${db.vouchers.length + 1}`,
+  userId,
+  amount,
+  minSpend: VOUCHER_MIN_SPEND,
+  reason,
+  expiresAt: new Date(Date.now() + 60 * 864e5).toISOString(),
+  usedOrderId: null,
+});
+const usable = (v) => !v.usedOrderId && new Date(v.expiresAt) > new Date();
+
+// Same pricing as the server, including discount codes, agreed prices and vouchers.
+function priceFor(user, { items, shipping, couriers, payment, coupon, voucherId, pickupPoint }) {
+  const voucherRow = voucherId && db.vouchers.find((v) => v.id === voucherId && v.userId === user.id && usable(v));
+  if (voucherId && !voucherRow) throw new ApiError(409, 'That voucher has been used or has expired');
   const coupons = {};
   if (coupon) {
     const found = db.coupons.filter((c) => c.code === coupon.toUpperCase() && c.active);
@@ -305,6 +376,8 @@ function priceFor(user, { items, shipping, couriers, payment, coupon }) {
       payment,
       coupons,
       quotes,
+      voucher: voucherRow && { amount: voucherRow.amount, minSpend: voucherRow.minSpend },
+      pickupPoint,
     });
   } catch (err) {
     if (err instanceof OrderError) throw new ApiError(409, err.message);
@@ -332,7 +405,7 @@ export async function placeOrder(body) {
     }),
   );
   const order = {
-    id: `AMS-TEST${db.orders.length + 1}`,
+    id: `ZM-TEST${db.orders.length + 1}`,
     buyerId: user.id,
     date: new Date().toISOString(),
     buyer: { name: shipping.name, phone: shipping.phone },
@@ -358,6 +431,8 @@ export async function placeOrder(body) {
       };
     }),
   };
+  if (body.voucherId) db.vouchers.find((v) => v.id === body.voucherId).usedOrderId = order.id;
+  order.voucherDiscount = priced.voucherDiscount ?? 0;
   db.orders.unshift(order);
   return copy(order);
 }
@@ -574,3 +649,771 @@ export async function deleteAccount() {
   Object.keys(db.sessions).forEach((t) => db.sessions[t] === user.id && delete db.sessions[t]);
   return { ok: true };
 }
+
+// ----- Cancellations and cases -----
+const findShipment = (orderId, shopId) => {
+  const order = db.orders.find((o) => o.id === orderId);
+  return { order, shipment: order?.shipments.find((x) => x.shopId === shopId) };
+};
+
+export async function cancelShipment(orderId, shopId, reason) {
+  const user = currentUser();
+  const { order, shipment } = findShipment(orderId, shopId);
+  const by = order?.buyerId === user.id ? 'buyer' : user.shopId === shopId ? 'seller' : null;
+  if (!by) throw new ApiError(404, 'Order not found');
+  if (shipment.status !== 'pending')
+    throw new ApiError(409, "This parcel has already been sent, so it can't be cancelled.");
+  Object.assign(shipment, { status: 'cancelled', cancelledBy: by, cancelReason: reason });
+  shipment.items.forEach((i) => {
+    const p = db.products.find((x) => x.id === i.id);
+    p.stock += i.qty;
+    p.sold -= i.qty;
+  });
+  const refund = order.paid ? shipment.subtotal - shipment.discount + shipment.fee : 0;
+  if (refund) {
+    shipment.refunded = refund;
+    db.refunds.push({
+      id: `rfd_${db.refunds.length + 1}`,
+      orderId,
+      shopId,
+      amount: refund,
+      reason: 'cancelled',
+      status: 'due',
+    });
+  }
+  return { order: copy(order), refund };
+}
+
+const caseView = (c, viewerRole) => ({
+  ...c,
+  canEscalate: c.status === 'rejected',
+  ...(viewerRole ? { viewerRole } : {}),
+});
+export async function openCase({ orderId, shopId, kind, reason, description = '', items = [], photos = [] }) {
+  const user = currentUser();
+  const { order, shipment } = findShipment(orderId, shopId);
+  if (!order || order.buyerId !== user.id) throw new ApiError(404, 'Order not found');
+  if (kind === 'return' && !items.length) throw new ApiError(400, 'Choose the items you want to return');
+  const c = {
+    id: `case_${db.cases.length + 1}`,
+    orderId,
+    shopId,
+    shopName: db.shops.find((x) => x.id === shopId).name,
+    buyerName: order.buyer.name,
+    kind,
+    reason,
+    description,
+    items: items.map((i) => ({ ...i, name: shipment.items.find((x) => x.id === i.productId).name })),
+    photos,
+    status: 'open',
+    resolution: null,
+    refundAmount: null,
+    events: [{ at: new Date().toISOString(), by: 'buyer', action: 'opened', note: description }],
+    date: new Date().toISOString(),
+  };
+  db.cases.push(c);
+  shipment.latestCase = { id: c.id, status: 'open', kind };
+  return copy(caseView(c));
+}
+const syncCase = (c) => {
+  const { shipment } = findShipment(c.orderId, c.shopId);
+  shipment.latestCase = { id: c.id, status: c.status, kind: c.kind, resolution: c.resolution };
+  if (c.refundAmount) shipment.refunded = (shipment.refunded ?? 0) + c.refundAmount;
+};
+export const myCases = async () =>
+  copy(db.cases.filter((c) => db.orders.find((o) => o.id === c.orderId).buyerId === currentUser().id));
+export const shopCases = async () => copy(db.cases.filter((c) => c.shopId === myShop().id).map((c) => caseView(c)));
+export async function getCase(id) {
+  const user = currentUser();
+  const c = db.cases.find((x) => x.id === id);
+  const buyerId = c && db.orders.find((o) => o.id === c.orderId).buyerId;
+  const role = !c
+    ? null
+    : buyerId === user.id
+      ? 'buyer'
+      : user.shopId === c.shopId
+        ? 'shop'
+        : user.isAdmin
+          ? 'staff'
+          : null;
+  if (!role) throw new ApiError(404, 'Case not found');
+  return copy(caseView(c, role));
+}
+export async function respondToCase(id, { accept, resolution, refundAmount, note = '' }) {
+  const c = db.cases.find((x) => x.id === id && x.shopId === myShop().id);
+  if (!c || c.status !== 'open') throw new ApiError(409, 'This case has already been answered');
+  const { order, shipment } = findShipment(c.orderId, c.shopId);
+  if (accept) {
+    c.status = 'accepted';
+    c.resolution = resolution;
+    if (resolution === 'refund') {
+      c.refundAmount = Number(refundAmount) || shipment.subtotal - shipment.discount + shipment.fee;
+      db.refunds.push({
+        id: `rfd_${db.refunds.length + 1}`,
+        orderId: order.id,
+        shopId: c.shopId,
+        amount: c.refundAmount,
+        reason: 'return',
+        status: 'due',
+      });
+    }
+  } else {
+    c.status = 'rejected';
+    c.resolution = 'rejected';
+  }
+  c.events.push({
+    at: new Date().toISOString(),
+    by: 'shop',
+    action: accept ? `accepted: ${resolution}` : 'rejected',
+    note,
+  });
+  syncCase(c);
+  return copy(caseView(c));
+}
+export async function escalateCase(id, note = '') {
+  const c = db.cases.find((x) => x.id === id);
+  if (c.status !== 'rejected') throw new ApiError(409, 'The shop has 3 days to answer first');
+  c.status = 'escalated';
+  c.events.push({ at: new Date().toISOString(), by: 'buyer', action: 'escalated', note });
+  syncCase(c);
+  return copy(caseView(c));
+}
+export async function withdrawCase(id) {
+  const c = db.cases.find((x) => x.id === id);
+  c.status = 'withdrawn';
+  syncCase(c);
+  return copy(caseView(c));
+}
+
+// ----- Verification -----
+export async function sellerVerification() {
+  const shop = myShop();
+  return copy({
+    status: shop.verification ?? 'unverified',
+    note: shop.verificationNote ?? null,
+    ownerFullName: shop.ownerFullName ?? null,
+    nrc: shop.nrc ?? null,
+    pacra: shop.pacra ?? null,
+    suspended: !!shop.suspended,
+    suspendReason: shop.suspendReason ?? null,
+  });
+}
+export async function submitVerification({ ownerFullName, nrc, pacra }) {
+  if (!/^\d{6}\/\d{2}\/\d$/.test(nrc ?? '')) throw new ApiError(400, 'Enter your NRC number like 123456/78/1');
+  Object.assign(myShop(), { ownerFullName, nrc, pacra, verification: 'pending' });
+  return { status: 'pending' };
+}
+export const removedProducts = async () =>
+  copy(db.products.filter((p) => p.shopId === myShop().id && p.removedReason && p.deletedAt));
+
+// ----- Staff -----
+const staff = () => {
+  const user = currentUser();
+  if (!user.isAdmin) throw new ApiError(403, 'Staff only');
+  return user;
+};
+const log = (action, targetType, targetId, note = '') =>
+  db.actions.unshift({
+    id: `act_${db.actions.length + 1}`,
+    admin: staff().name,
+    action,
+    targetType,
+    targetId,
+    note,
+    date: new Date().toISOString(),
+  });
+
+export const admin = {
+  async stats() {
+    staff();
+    return {
+      users: db.users.length,
+      shops: db.shops.length,
+      shopsToVerify: db.shops.filter((x) => x.verification === 'pending').length,
+      products: live().length,
+      orders7d: db.orders.length,
+      sales7d: db.orders.reduce((n, o) => n + o.total, 0),
+      lateDispatch: 0,
+      escalatedCases: db.cases.filter((c) => c.status === 'escalated').length,
+      openCases: db.cases.filter((c) => c.status === 'open').length,
+      refundsDue: db.refunds.filter((r) => r.status === 'due').length,
+      refundsDueAmount: db.refunds.filter((r) => r.status === 'due').reduce((n, r) => n + r.amount, 0),
+      supportWaiting: db.tickets.filter((t) => t.status === 'open' && t.staffUnread > 0).length,
+      payoutsReady: 0,
+      payoutsReadyAmount: 0,
+    };
+  },
+  async shops({ status } = {}) {
+    staff();
+    return copy(
+      db.shops
+        .filter((x) => !status || (x.verification ?? 'unverified') === status)
+        .map((x) => ({
+          ...x,
+          verification: x.verification ?? 'unverified',
+          productCount: live().filter((p) => p.shopId === x.id).length,
+        })),
+    );
+  },
+  async verifyShop(id, status, note) {
+    Object.assign(
+      db.shops.find((x) => x.id === id),
+      { verification: status, verified: status === 'verified', verificationNote: note },
+    );
+    log(`shop ${status}`, 'shop', id, note);
+    return { ok: true };
+  },
+  async suspendShop(id, suspended, reason) {
+    Object.assign(
+      db.shops.find((x) => x.id === id),
+      { suspended, suspendReason: suspended ? reason : null },
+    );
+    log(suspended ? 'shop suspended' : 'shop restored', 'shop', id, reason);
+    return { ok: true };
+  },
+  async products({ q = '', status } = {}) {
+    staff();
+    return copy(
+      db.products
+        .filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()))
+        .filter((p) => !status || (status === 'removed' ? p.removedReason : !p.deletedAt))
+        .slice(0, 100)
+        .map((p) => ({ ...p, shopName: db.shops.find((x) => x.id === p.shopId)?.name, removed: !!p.deletedAt })),
+    );
+  },
+  async removeProduct(id, reason) {
+    Object.assign(
+      db.products.find((p) => p.id === id),
+      { deletedAt: new Date().toISOString(), removedReason: reason },
+    );
+    log('listing removed', 'product', id, reason);
+    return { ok: true };
+  },
+  async restoreProduct(id) {
+    Object.assign(
+      db.products.find((p) => p.id === id),
+      { deletedAt: null, removedReason: null },
+    );
+    log('listing restored', 'product', id);
+    return { ok: true };
+  },
+  reviews: async () => (staff(), copy(db.reviews)),
+  async removeReview(id, reason) {
+    db.reviews = db.reviews.filter((r) => r.id !== id);
+    log('review removed', 'review', id, reason);
+    return { ok: true };
+  },
+  users: async () => (staff(), copy(db.users.map((u) => ({ ...u, orderCount: 0, suspended: !!u.suspended })))),
+  async suspendUser(id, suspended, reason) {
+    Object.assign(
+      db.users.find((u) => u.id === id),
+      { suspended, suspendReason: suspended ? reason : null },
+    );
+    log(suspended ? 'user suspended' : 'user restored', 'user', id, reason);
+    return { ok: true };
+  },
+  orders: async () => (staff(), copy(db.orders)),
+  async cancelShipment(orderId, shopId, reason) {
+    const { shipment } = findShipment(orderId, shopId);
+    Object.assign(shipment, { status: 'cancelled', cancelledBy: 'admin', cancelReason: reason });
+    log('parcel cancelled', 'order', orderId, reason);
+    return { refund: 0 };
+  },
+  cases: async ({ status } = {}) => (
+    staff(),
+    copy(db.cases.filter((c) => !status || c.status === status).map((c) => ({ ...caseView(c), refundableLeft: 1000 })))
+  ),
+  async decideCase(id, { outcome, refundAmount, note }) {
+    const c = db.cases.find((x) => x.id === id);
+    c.status = 'resolved';
+    c.resolution = outcome === 'refund' ? 'refund' : 'rejected';
+    if (outcome === 'refund') {
+      c.refundAmount = Number(refundAmount);
+      db.refunds.push({
+        id: `rfd_${db.refunds.length + 1}`,
+        orderId: c.orderId,
+        shopId: c.shopId,
+        amount: c.refundAmount,
+        reason: 'return',
+        status: 'due',
+      });
+    }
+    c.events.push({ at: new Date().toISOString(), by: 'staff', action: `decided: ${outcome}`, note });
+    syncCase(c);
+    log(`case decided: ${outcome}`, 'case', id, note);
+    return copy(caseView(c));
+  },
+  refunds: async ({ status } = {}) => (
+    staff(),
+    copy(
+      db.refunds
+        .filter((r) => !status || r.status === status)
+        .map((r) => ({
+          ...r,
+          buyerName: 'Buyer',
+          buyerPhone: '',
+          paymentMethod: 'mtn',
+          shopName: '',
+          date: new Date().toISOString(),
+        })),
+    )
+  ),
+  async markRefundPaid(id, reference) {
+    Object.assign(
+      db.refunds.find((r) => r.id === id),
+      { status: 'paid', reference },
+    );
+    log('refund paid', 'refund', id, reference);
+    return { ok: true };
+  },
+  actions: async () => (staff(), copy(db.actions)),
+};
+
+// ---------- Notifications, support, buying requests, vouchers ----------
+const note = (userId, kind, title, body = '', link = null) =>
+  db.notifications.unshift({
+    id: `ntf_${db.notifications.length + 1}`,
+    userId,
+    kind,
+    title,
+    body,
+    link,
+    read: false,
+    date: new Date().toISOString(),
+  });
+export const __notify = note;
+
+export const notifications = async () => copy(db.notifications.filter((n) => n.userId === currentUser().id));
+export async function counts() {
+  const user = currentUser();
+  const shop = db.shops.find((s) => s.ownerId === user.id);
+  const { count } = await unreadMessages();
+  return {
+    notifications: db.notifications.filter((n) => n.userId === user.id && !n.read).length,
+    messages: count + db.tickets.filter((t) => t.userId === user.id).reduce((n, t) => n + t.userUnread, 0),
+    toDispatch: shop
+      ? db.orders.flatMap((o) => o.shipments).filter((x) => x.shopId === shop.id && x.status === 'pending').length
+      : 0,
+  };
+}
+export async function markNotificationsRead(ids) {
+  const user = currentUser();
+  db.notifications
+    .filter((n) => n.userId === user.id && (!ids || ids.includes(n.id)))
+    .forEach((n) => (n.read = true));
+  return { ok: true };
+}
+
+const ticketView = (t, reader) => ({
+  id: t.id,
+  subject: t.subject,
+  status: t.status,
+  orderId: null,
+  userName: db.users.find((u) => u.id === t.userId)?.name,
+  userPhone: db.users.find((u) => u.id === t.userId)?.phone,
+  unread: reader === 'staff' ? t.staffUnread : t.userUnread,
+  lastMessageAt: t.messages.at(-1).date,
+  date: t.messages[0].date,
+});
+const supportMessage = (t, fromStaff, author, body) => {
+  t.messages.push({ id: `smg_${t.messages.length + 1}`, fromStaff, author, body, date: new Date().toISOString() });
+  if (fromStaff) t.userUnread += 1;
+  else t.staffUnread += 1;
+  t.status = 'open';
+};
+export async function openSupportTicket({ subject, body }) {
+  const user = currentUser();
+  if (!subject?.trim() || !body?.trim()) throw new ApiError(400, 'Tell us what it is about');
+  const t = {
+    id: `tkt_${db.tickets.length + 1}`,
+    userId: user.id,
+    subject,
+    status: 'open',
+    userUnread: 0,
+    staffUnread: 0,
+    messages: [],
+  };
+  supportMessage(t, false, user.name, body);
+  db.tickets.push(t);
+  return { id: t.id };
+}
+export const supportTickets = async () =>
+  copy(db.tickets.filter((t) => t.userId === currentUser().id).map((t) => ticketView(t, 'user')));
+export async function supportTicket(id) {
+  const t = db.tickets.find((x) => x.id === id && x.userId === currentUser().id);
+  if (!t) throw new ApiError(404, 'Not found');
+  t.userUnread = 0;
+  return copy({ ...ticketView(t, 'user'), messages: t.messages });
+}
+export async function replySupport(id, body) {
+  const user = currentUser();
+  supportMessage(
+    db.tickets.find((x) => x.id === id && x.userId === user.id),
+    false,
+    user.name,
+    body,
+  );
+  return { ok: true };
+}
+export const adminSupport = {
+  async list(status) {
+    staff();
+    return copy(db.tickets.filter((t) => !status || t.status === status).map((t) => ticketView(t, 'staff')));
+  },
+  async get(id) {
+    staff();
+    const t = db.tickets.find((x) => x.id === id);
+    t.staffUnread = 0;
+    return copy({ ...ticketView(t, 'staff'), messages: t.messages });
+  },
+  async reply(id, body) {
+    staff();
+    const t = db.tickets.find((x) => x.id === id);
+    supportMessage(t, true, 'Zed Market support', body);
+    note(t.userId, 'support', 'Zed Market replied to your question', body, `/help/${id}`);
+    return { ok: true };
+  },
+  async setStatus(id, status) {
+    staff();
+    db.tickets.find((x) => x.id === id).status = status;
+    return { ok: true };
+  },
+};
+
+const buyingView = (r, user) => {
+  const shop = user && db.shops.find((s) => s.ownerId === user.id);
+  const mine = user?.id === r.buyerId;
+  return {
+    ...r,
+    buyerName: db.users.find((u) => u.id === r.buyerId)?.name.split(' ')[0],
+    mine,
+    offerCount: r.offers.length,
+    offers: mine ? r.offers : r.offers.filter((o) => o.shopId === shop?.id),
+  };
+};
+export const buyingRequests = async ({ q = '', cat = '', prov = '' } = {}) =>
+  copy(
+    db.requests
+      .filter((r) => r.status === 'open')
+      .filter((r) => (!cat || r.category === cat) && (!prov || r.province === prov))
+      .filter((r) => !q || r.title.toLowerCase().includes(q.toLowerCase()))
+      .map((r) => buyingView(r, viewer())),
+  );
+export const myBuyingRequests = async () =>
+  copy(db.requests.filter((r) => r.buyerId === currentUser().id).map((r) => buyingView(r, currentUser())));
+export async function buyingRequest(id) {
+  const r = db.requests.find((x) => x.id === id);
+  if (!r) throw new ApiError(404, 'Request not found');
+  return copy(buyingView(r, viewer()));
+}
+export async function postBuyingRequest(body) {
+  const user = currentUser();
+  if (!body.title || body.title.trim().length < 3) throw new ApiError(400, 'Say what you are looking for');
+  if (!(Number(body.qty) >= 1)) throw new ApiError(400, 'Enter how many you need');
+  const r = {
+    id: `brq_${db.requests.length + 1}`,
+    buyerId: user.id,
+    title: body.title.trim(),
+    description: body.description ?? '',
+    category: body.category || null,
+    qty: Number(body.qty),
+    unit: body.unit || 'units',
+    budget: body.budget ? Number(body.budget) : null,
+    province: body.province,
+    town: body.town,
+    status: 'open',
+    acceptedOfferId: null,
+    date: new Date().toISOString(),
+    offers: [],
+  };
+  db.requests.unshift(r);
+  return copy(buyingView(r, user));
+}
+export async function sendOffer(id, { price, note: text = '' }) {
+  const shop = myShop();
+  if (!isLiveShop(shop)) throw new ApiError(403, 'Your shop must be approved before you can send offers');
+  if (!(Number(price) > 0)) throw new ApiError(400, 'Enter your price');
+  const r = db.requests.find((x) => x.id === id);
+  r.offers = r.offers.filter((o) => o.shopId !== shop.id);
+  r.offers.push({
+    id: `ofr_${shop.id}`,
+    shopId: shop.id,
+    shopName: shop.name,
+    shopTown: shop.town,
+    shopVerified: true,
+    price: Number(price),
+    note: text,
+    productId: null,
+    date: new Date().toISOString(),
+  });
+  note(r.buyerId, 'offer', `New offer for "${r.title}"`, `${shop.name}: K${price} each`, `/requests/${r.id}`);
+  return { ok: true };
+}
+export async function acceptOffer(id, offerId) {
+  const r = db.requests.find((x) => x.id === id && x.buyerId === currentUser().id);
+  Object.assign(r, { status: 'closed', acceptedOfferId: offerId });
+  return { ok: true };
+}
+export async function closeBuyingRequest(id) {
+  db.requests.find((x) => x.id === id && x.buyerId === currentUser().id).status = 'closed';
+  return { ok: true };
+}
+
+export const myVouchers = async () =>
+  copy(db.vouchers.filter((v) => v.userId === currentUser().id).map((v) => ({ ...v, usable: usable(v) })));
+export async function myReferral() {
+  const user = db.users.find((u) => u.id === currentUser().id);
+  return {
+    code: user.referralCode,
+    invited: db.users.filter((u) => u.referredBy === user.id).length,
+    rewarded: db.vouchers.filter((v) => v.userId === user.id && v.reason === 'referral').length,
+  };
+}
+export const __addVoucher = (userId, amount, reason = 'welcome') => {
+  const v = newVoucher(userId, amount, reason);
+  db.vouchers.push(v);
+  return v;
+};
+
+// ---------- Admin tools: banners, campaigns, announcements, payouts, analytics ----------
+const extra = () => {
+  db.banners ??= [];
+  db.campaigns ??= [];
+  db.announcements ??= [];
+  db.payouts ??= [];
+  return db;
+};
+const audienceUsers = ({ audience, province, phone }) =>
+  db.users.filter((u) => {
+    if (audience === 'buyers') return ['buyer', 'business'].includes(u.accountType);
+    if (audience === 'sellers') return db.shops.some((s) => s.ownerId === u.id);
+    if (audience === 'province')
+      return db.shops.some((s) => s.ownerId === u.id && s.province === province) ||
+        db.orders.some((o) => o.buyerId === u.id && o.shipping.province === province);
+    if (audience === 'phone') return normalizePhone(u.phone) === normalizePhone(phone ?? '');
+    return true;
+  });
+
+// Simplified balances: every delivered parcel counts as cleared.
+function balanceOf(shopId) {
+  const parcels = db.orders.flatMap((o) =>
+    o.shipments.filter((s) => s.shopId === shopId && s.status === 'delivered').map((s) => ({ s, o })),
+  );
+  const earned = parcels.reduce((n, { s, o }) => {
+    const goods = s.subtotal - (s.discount ?? 0);
+    const commission = Math.round(goods * 5) / 100;
+    return n + (o.paid ? goods + s.fee - commission : (s.voucherDiscount ?? 0) - commission);
+  }, 0);
+  const paidOut = extra().payouts.filter((p) => p.shopId === shopId).reduce((n, p) => n + p.amount, 0);
+  return { shopId, earned, onHold: 0, refunds: 0, paidOut, parcels: parcels.length, available: earned - paidOut };
+}
+
+export const banners = async () =>
+  copy(extra().banners.filter((b) => b.active).sort((a, b) => a.position - b.position));
+export async function sellerPayouts() {
+  const shop = myShop();
+  return copy({ ...balanceOf(shop.id), history: extra().payouts.filter((p) => p.shopId === shop.id) });
+}
+
+Object.assign(admin, {
+  async analytics(days) {
+    staff();
+    const gmv = db.orders.reduce((n, o) => n + o.total, 0);
+    return copy({
+      days,
+      orders: db.orders.length,
+      buyers: new Set(db.orders.map((o) => o.buyerId)).size,
+      gmv,
+      averageOrder: db.orders.length ? gmv / db.orders.length : 0,
+      commission: 0,
+      vouchers: 0,
+      refunds: 0,
+      cancellationRate: 0,
+      delivered: 0,
+      newUsers: db.users.length,
+      newShops: 0,
+      daily: Array.from({ length: days }, (_, i) => ({
+        day: new Date(Date.now() - (days - 1 - i) * 864e5).toISOString(),
+        orders: i === days - 1 ? db.orders.length : 0,
+        gmv: i === days - 1 ? gmv : 0,
+        users: 0,
+      })),
+      provinces: [],
+      shops: [],
+      categories: [],
+      payments: [],
+      couriers: [],
+    });
+  },
+  async payouts() {
+    staff();
+    return copy(
+      db.shops
+        .filter((s) => s.ownerId)
+        .map((s) => ({ ...balanceOf(s.id), shopName: s.name, shopTown: s.town, shopPhone: s.phone })),
+    );
+  },
+  async payoutHistory() {
+    staff();
+    return copy(extra().payouts);
+  },
+  async pay({ shopId, amount, method, reference }) {
+    staff();
+    if (Number(amount) > balanceOf(shopId).available) throw new ApiError(409, 'More than is available');
+    const shop = db.shops.find((s) => s.id === shopId);
+    const p = { id: `pay_${extra().payouts.length + 1}`, shopId, shopName: shop.name, amount: Number(amount), method, reference, date: new Date().toISOString() };
+    extra().payouts.unshift(p);
+    note(shop.ownerId, 'payout', `Zed Market paid you K${amount}`, `Reference ${reference}`, '/seller?tab=report');
+    return copy(p);
+  },
+  async banners() {
+    staff();
+    return copy(extra().banners.map((b) => ({ ...b, live: b.active })));
+  },
+  async createBanner(body) {
+    staff();
+    if (!body.title || body.title.length < 3) throw new ApiError(400, 'Give the banner a title');
+    const b = { id: `bnr_${extra().banners.length + 1}`, active: true, position: 0, ...body };
+    db.banners.push(b);
+    return copy(b);
+  },
+  async updateBanner(id, patch) {
+    staff();
+    Object.assign(extra().banners.find((b) => b.id === id), patch);
+    return { ok: true };
+  },
+  async deleteBanner(id) {
+    staff();
+    db.banners = extra().banners.filter((b) => b.id !== id);
+    return { ok: true };
+  },
+  async campaigns() {
+    staff();
+    return copy(extra().campaigns);
+  },
+  async createCampaign(body) {
+    staff();
+    const users = audienceUsers(body);
+    if (body.audience === 'phone' && !users.length) throw new ApiError(404, 'No customer has that phone number');
+    const c = {
+      id: `cmp_${extra().campaigns.length + 1}`,
+      name: body.name,
+      amount: Number(body.amount),
+      minSpend: Number(body.minSpend),
+      audience: body.audience,
+      province: body.province,
+      expiresAt: new Date(Date.now() + Number(body.days) * 864e5).toISOString(),
+      issued: users.length,
+      used: 0,
+    };
+    db.campaigns.unshift(c);
+    users.forEach((u) => {
+      const v = newVoucher(u.id, c.amount, 'campaign');
+      Object.assign(v, { minSpend: c.minSpend, note: c.name, campaignId: c.id, expiresAt: c.expiresAt });
+      db.vouchers.push(v);
+      note(u.id, 'voucher', `🎁 K${c.amount} voucher: ${c.name}`, '', '/account?tab=invite');
+    });
+    return { id: c.id, issued: users.length };
+  },
+  async announcements() {
+    staff();
+    return copy(extra().announcements);
+  },
+  async announce(body) {
+    staff();
+    const users = audienceUsers(body);
+    users.forEach((u) => note(u.id, 'announcement', body.title, body.body, body.link || null));
+    const a = { id: `ann_${extra().announcements.length + 1}`, ...body, sent: users.length, date: new Date().toISOString() };
+    db.announcements.unshift(a);
+    return { id: a.id, sent: users.length };
+  },
+  async requests({ status = 'open' } = {}) {
+    staff();
+    return copy(
+      db.requests
+        .filter((r) => (status === 'removed' ? r.status === 'removed' : status === 'all' || r.status === 'open'))
+        .map((r) => buyingView(r, null)),
+    );
+  },
+  async removeRequest(id, reason) {
+    staff();
+    Object.assign(
+      db.requests.find((r) => r.id === id),
+      { status: 'removed', removedReason: reason },
+    );
+    return { ok: true };
+  },
+});
+
+// ---------- Staff, settings and acting for shops ----------
+const defaultSettings = { commissionRate: 0.05, welcomeVoucher: 50, referralReward: 50, voucherMinSpend: 300, voucherDays: 60 };
+const settingsNow = () => ({ ...defaultSettings, ...(db.settings ?? {}) });
+export const settings = async () => copy(settingsNow());
+const owner = () => {
+  if (currentUser().staffRole !== 'owner') throw new ApiError(403, 'Only Zed Market owners can do this');
+};
+
+Object.assign(admin, {
+  async staff() {
+    staff();
+    return copy(
+      db.users
+        .filter((u) => u.admin || u.staff)
+        .map((u) => ({ id: u.id, name: u.name, phone: u.phone, role: u.admin ? 'owner' : 'staff', since: null })),
+    );
+  },
+  async addStaff({ phone, name }) {
+    owner();
+    let user = db.users.find((u) => normalizePhone(u.phone) === normalizePhone(phone));
+    if (user && db.shops.some((x) => x.ownerId === user.id)) throw new ApiError(409, `${user.name} owns a shop`);
+    if (!user) {
+      user = { id: `usr_${db.users.length + 1}`, name: name || 'Zed Market staff', phone, accountType: 'admin' };
+      db.users.push(user);
+    }
+    user.staff = true;
+    return copy({ id: user.id, name: user.name, phone, role: 'staff' });
+  },
+  async removeStaff(id) {
+    owner();
+    db.users.find((u) => u.id === id).staff = false;
+    return { ok: true };
+  },
+  async settings() {
+    staff();
+    return copy({ values: settingsNow(), defaults: defaultSettings });
+  },
+  async saveSettings(body) {
+    owner();
+    db.settings = { ...(db.settings ?? {}), ...body };
+    return copy(settingsNow());
+  },
+  async shop(id) {
+    staff();
+    return copy(db.shops.find((x) => x.id === id));
+  },
+  async editShop(id, { note: why, ...body }) {
+    staff();
+    if (!why || why.trim().length < 3) throw new ApiError(400, 'Give a reason');
+    const shop = db.shops.find((x) => x.id === id);
+    Object.assign(shop, body);
+    note(shop.ownerId, 'shop', 'Zed Market updated your shop details', why, '/seller?tab=settings');
+    return copy(shop);
+  },
+  async editProduct(id, { note: why, ...body }) {
+    staff();
+    if (!why || why.trim().length < 3) throw new ApiError(400, 'Give a reason');
+    const product = db.products.find((p) => p.id === id);
+    Object.assign(product, body);
+    return copy(product);
+  },
+  async setParcelStatus(orderId, shopId, { status, note: why }) {
+    staff();
+    const order = db.orders.find((o) => o.id === orderId);
+    const shipment = order.shipments.find((x) => x.shopId === shopId);
+    const next = { pending: 'dispatched', dispatched: 'delivered' }[shipment.status];
+    if (next !== status) throw new ApiError(409, `A ${shipment.status} parcel can't be marked ${status}`);
+    shipment.status = status;
+    note(order.buyerId, 'order', status === 'delivered' ? 'Delivered' : 'On its way', why, '/account');
+    return copy(order);
+  },
+});

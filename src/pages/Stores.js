@@ -6,6 +6,7 @@ import AskShop from '../components/AskShop';
 import Stars from '../components/Stars';
 import { useProductSearch } from '../hooks/useProducts';
 import ShopCard, { CourierChips } from '../components/ShopCard';
+import ShareButton from '../components/ShareButton';
 import { useStore } from '../context/StoreContext';
 import { band, bandRank } from '../data/couriers';
 import { formatLocation, getProvince, provinces } from '../data/zambia';
@@ -15,6 +16,7 @@ export default function Stores() {
   const [params, setParams] = useSearchParams();
   const prov = params.get('prov') ?? '';
   const list = shops
+    .filter((s) => !s.suspended)
     .filter((s) => !prov || s.province === prov)
     .sort((a, b) => bandRank[band(a, location)] - bandRank[band(b, location)] || (b.rating ?? 0) - (a.rating ?? 0));
 
@@ -85,27 +87,55 @@ export function StorePage() {
 
   const phone = shop.phone.replace(/\s/g, '').replace(/^0/, '260');
 
+  const directions = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    [shop.area, shop.town, 'Zambia'].filter(Boolean).join(', '),
+  )}`;
+
   return (
     <div className="container section">
-      <div className="card dash-head">
+      {shop.banner && <div className="store-banner" style={{ backgroundImage: `url(${shop.banner})` }} />}
+      <div className={`card dash-head ${shop.banner ? 'under-banner' : ''}`}>
         <span className="shop-logo">{shop.logo ?? '🏪'}</span>
         <div className="grow">
-          <h1>{shop.name}</h1>
+          <h1>
+            {shop.name}{' '}
+            {shop.verified && (
+              <span className="verified-badge" title="Verified by Zed Market">
+                ✓ Verified
+              </span>
+            )}
+          </h1>
+          {shop.suspended && <p className="error">This shop is not taking orders at the moment.</p>}
+          {!shop.verified && !shop.suspended && (
+            <p className="review-note">⏳ Only you can see this page until Zed Market approves your shop.</p>
+          )}
           <p className="muted">
             📍 {shop.area ? `${shop.area}, ` : ''}
             {formatLocation(shop)} ·{' '}
             {shop.rating
               ? `★ ${shop.rating}${shop.reviewCount ? ` (${shop.reviewCount} reviews)` : ''}`
               : '✨ New shop'}{' '}
-            · On Amasampo since {shop.since}
+            · On Zed Market since {shop.since}
           </p>
+          {shop.openingHours && <p className="small">🕘 {shop.openingHours}</p>}
           <CourierChips ids={shop.couriers} />
         </div>
+        <ShareButton title={shop.name} text={`${shop.name} on Zed Market`} path={`/store/${shop.id}`} />
+        <a className="btn btn-outline" href={directions} target="_blank" rel="noopener noreferrer">
+          🧭 Directions
+        </a>
         <a className="btn btn-primary" href={`https://wa.me/${phone}`} target="_blank" rel="noopener noreferrer">
           💬 WhatsApp shop
         </a>
         <AskShop shop={shop} label="✉️ Message shop" />
       </div>
+
+      {shop.about && (
+        <section className="card store-about">
+          <h2>About {shop.name}</h2>
+          <p className="pre-line">{shop.about}</p>
+        </section>
+      )}
 
       <div className="section-head section">
         <h2>Products ({products.total})</h2>

@@ -21,10 +21,15 @@ const app = createApp(db, {
   buildDir: path.join(root, 'build'),
   // Shows sign-in codes in the app while no SMS provider is connected. Never enabled in production.
   exposeCodes: !production,
+  // Staff accounts, e.g. ADMIN_PHONES=0977123456,0966123456
+  adminPhones: (process.env.ADMIN_PHONES ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean),
 });
 
 app.listen(port, () =>
   console.log(
-    `Amasampo API on http://localhost:${port} (database: ${db.kind}${db.location ? ` in ${db.location}` : ''})`,
+    `Zed Market API on http://localhost:${port} (database: ${db.kind}${db.location ? ` in ${db.location}` : ''})`,
   ),
 );

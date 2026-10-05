@@ -3,7 +3,8 @@ import { checkChoice } from '../../src/data/options.js';
 import { requireUser } from '../auth.js';
 import { HttpError, newId, parse } from '../http.js';
 import { toProduct } from '../mappers.js';
-import { myShopOrFail } from '../queries.js';
+import { notify, notifyShopOwner } from '../notify.js';
+import { LIVE_SHOP, myShopOrFail } from '../queries.js';
 import { priceRequestSchema, priceResponseSchema } from '../schemas.js';
 
 // Status shown to people: a quoted or accepted price past its date has expired.
@@ -46,7 +47,11 @@ export function priceRequestRoutes(db) {
 
   router.post('/', async (req, res) => {
     const body = parse(priceRequestSchema, req.body);
-    const [row] = await db.query('SELECT * FROM products WHERE id = $1 AND deleted_at IS NULL', [body.productId]);
+    const [row] = await db.query(
+      `SELECT p.* FROM products p JOIN shops sh ON sh.id = p.shop_id
+        WHERE p.id = $1 AND p.deleted_at IS NULL AND ${LIVE_SHOP}`,
+      [body.productId],
+    );
     if (!row) throw new HttpError(404, 'Product not found');
     const product = toProduct(row);
     if (product.shopId === req.user.shopId) throw new HttpError(400, "You can't request a price from your own shop");
@@ -76,6 +81,12 @@ export function priceRequestRoutes(db) {
       ],
     );
     const [created] = await db.query(`${SELECT} WHERE r.id = $1`, [id]);
+    await notifyShopOwner(db, product.shopId, {
+      kind: 'quote',
+      title: `Price request: ${body.qty} × ${product.name}`,
+      body: body.note,
+      link: '/seller?tab=quotes',
+    });
     res.status(201).json(toRequest(created));
   });
 
@@ -110,6 +121,12 @@ export function priceRequestRoutes(db) {
         );
     if (!rows.length) throw new HttpError(409, 'This request has already been answered');
     const [row] = await db.query(`${SELECT} WHERE r.id = $1`, [req.params.id]);
+    await notify(db, row.buyer_id, {
+      kind: 'quote',
+      title: body.decline ? `${shop.name} can't offer a price` : `${shop.name} offered K${body.price} each`,
+      body: `For ${row.qty} × ${row.product_name}. ${body.note ?? ''}`.trim(),
+      link: '/account?tab=quotes',
+    });
     res.json(toRequest(row));
   });
 

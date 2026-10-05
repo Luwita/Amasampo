@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as api from '../api';
 import LocationFields from '../components/LocationFields';
-import ProductCard, { ProductImage } from '../components/ProductCard';
+import { ProductImage } from '../components/ProductCard';
+import { ProductRow } from '../components/ProductGrid';
 import AskShop from '../components/AskShop';
+import ShareButton from '../components/ShareButton';
 import { RequestPriceForm } from '../components/PriceRequests';
 import Stars from '../components/Stars';
 import { useStore } from '../context/StoreContext';
@@ -181,15 +183,15 @@ function Reviews({ product, shopName }) {
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getShop, addToCart, wishlist, toggleWishlist } = useStore();
+  const { getShop, addToCart, wishlist, toggleWishlist, myShop } = useStore();
   const { product, status } = useProduct(id);
   const [qty, setQty] = useState(1);
   const [photo, setPhoto] = useState(0);
   const [choice, setChoice] = useState({});
   const [showErrors, setShowErrors] = useState(false);
 
-  const fromShop = useProductSearch(product ? { shop: product.shopId, sort: 'popular', limit: 5 } : null).items;
-  const similar = useProductSearch(product ? { cat: product.category, sort: 'popular', limit: 9 } : null).items;
+  const fromShop = useProductSearch(product ? { shop: product.shopId, sort: 'popular', limit: 13 } : null).items;
+  const similar = useProductSearch(product ? { cat: product.category, sort: 'popular', limit: 24 } : null).items;
 
   if (!product) {
     if (status === 'loading') return <div className="container section muted">Loading…</div>;
@@ -208,8 +210,8 @@ export default function ProductDetail() {
   const price = unitPrice(product, qty);
   const off = discountPct(product.price, product.oldPrice);
   const tiers = [{ min: 1, price: product.price }, ...product.tiers];
-  const more = fromShop.filter((p) => p.id !== product.id).slice(0, 4);
-  const related = similar.filter((p) => p.id !== product.id && p.shopId !== product.shopId).slice(0, 4);
+  const more = fromShop.filter((p) => p.id !== product.id);
+  const related = similar.filter((p) => p.id !== product.id && p.shopId !== product.shopId);
 
   const add = () => {
     if (checkChoice(product, choice)) {
@@ -331,13 +333,29 @@ export default function ProductDetail() {
           <div className="pdp-buttons pdp-secondary">
             {shop && <AskShop shop={shop} product={product} />}
             {product.stock >= 2 && <RequestPriceForm product={product} choice={choice} startQty={qty} />}
+            <ShareButton title={product.name} text={`${product.name} for ${formatK(price)} on Zed Market`} />
+            {myShop && myShop.id !== product.shopId && (
+              <Link to={`/seller?tab=add&resell=${product.id}`} className="btn btn-outline btn-sm" title="List this product in your shop">
+                ⇄ Resell in my shop
+              </Link>
+            )}
           </div>
+        </div>
 
+        {/* Seller and delivery: a third column on very wide screens, under the buy buttons otherwise. */}
+        <aside className="pdp-aside">
           {shop && (
             <Link to={`/store/${shop.id}`} className="card seller-box">
               <span className="shop-logo sm">{shop.logo ?? '🏪'}</span>
               <span>
-                <strong>{shop.name}</strong>
+                <strong>
+                  {shop.name}{' '}
+                  {shop.verified && (
+                    <span className="verified-badge" title="Verified by Zed Market">
+                      ✓
+                    </span>
+                  )}
+                </strong>
                 <span className="muted small block">
                   📍 {shop.area ? `${shop.area}, ` : ''}
                   {formatLocation(shop)} ·{' '}
@@ -355,7 +373,7 @@ export default function ProductDetail() {
             <li>↩️ 7-day returns if the item is not as described</li>
             <li>⚖️ Shipping weight: {formatKg(product.weightKg ?? 1)} per unit</li>
           </ul>
-        </div>
+        </aside>
       </div>
 
       <section className="card section pdp-desc">
@@ -371,11 +389,7 @@ export default function ProductDetail() {
             <h2>More from {shop?.name}</h2>
             <Link to={`/store/${product.shopId}`}>Visit shop →</Link>
           </div>
-          <div className="grid grid-4">
-            {more.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          <ProductRow items={more} />
         </section>
       )}
 
@@ -384,11 +398,7 @@ export default function ProductDetail() {
           <div className="section-head">
             <h2>Similar from other shops</h2>
           </div>
-          <div className="grid grid-4">
-            {related.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          <ProductRow items={related} />
         </section>
       )}
     </div>

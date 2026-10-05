@@ -4,6 +4,19 @@ import { z } from 'zod';
 import { normalizePhone } from '../src/utils/format.js';
 import { HttpError, newId, parse } from './http.js';
 import { toUser } from './mappers.js';
+import { getSettings } from './settings.js';
+import { notify } from './notify.js';
+
+// A short, shareable invite code such as CHANDA42K.
+async function uniqueReferralCode(db, name) {
+  const base = (name || 'ZED').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6) || 'ZED';
+  for (let i = 0; i < 20; i++) {
+    const code = base + randomBytes(2).toString('hex').toUpperCase().slice(0, 3);
+    const [taken] = await db.query('SELECT 1 FROM users WHERE referral_code = $1', [code]);
+    if (!taken) return code;
+  }
+  return 'ZM' + randomBytes(4).toString('hex').toUpperCase();
+}
 
 const CODE_TTL_MIN = 10;
 const RESEND_AFTER_SEC = 30;
@@ -24,23 +37,33 @@ export const consoleSms = {
   },
 };
 
-async function loadUser(db, userId) {
+// Suspended accounts load as nobody, so their sessions stop working everywhere at once.
+// Owners are the ADMIN_PHONES numbers (checked on every request, so removing a number revokes access at once);
+// other staff are added in the admin panel. Staff accounts run the marketplace and never act as a shop.
+async function loadUser(db, userId, admins) {
   const [row] = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
-  if (!row) return null;
-  const [shop] = await db.query('SELECT id FROM shops WHERE owner_id = $1', [userId]);
-  return toUser(row, shop?.id ?? null);
+  if (!row || row.suspended_at) return null;
+  const isOwner = admins.has(row.phone);
+  const isAdmin = isOwner || row.is_staff;
+  const [shop] = isAdmin ? [] : await db.query('SELECT id FROM shops WHERE owner_id = $1', [userId]);
+  return { ...toUser(row, shop?.id ?? null), isAdmin, staffRole: isOwner ? 'owner' : isAdmin ? 'staff' : null };
 }
 
 // Adds req.user when a valid bearer token is sent.
-export const authenticate = (db) => async (req, _res, next) => {
-  const token = req.get('authorization')?.match(/^Bearer (\S+)$/)?.[1];
-  if (token) {
-    const [session] = await db.query('SELECT user_id FROM sessions WHERE token_hash = $1 AND expires_at > now()', [
-      sha256(token),
-    ]);
-    if (session) req.user = await loadUser(db, session.user_id);
-  }
-  next();
+const adminSet = (phones = []) => new Set(phones.map(normalizePhone).filter(Boolean));
+
+export const authenticate = (db, { adminPhones = [] } = {}) => {
+  const admins = adminSet(adminPhones);
+  return async (req, _res, next) => {
+    const token = req.get('authorization')?.match(/^Bearer (\S+)$/)?.[1];
+    if (token) {
+      const [session] = await db.query('SELECT user_id FROM sessions WHERE token_hash = $1 AND expires_at > now()', [
+        sha256(token),
+      ]);
+      if (session) req.user = await loadUser(db, session.user_id, admins);
+    }
+    next();
+  };
 };
 
 export const requireUser = (req, _res, next) => {
@@ -48,7 +71,22 @@ export const requireUser = (req, _res, next) => {
   next();
 };
 
-export function authRoutes(db, { sms = consoleSms, exposeCodes = false } = {}) {
+export const requireAdmin = (req, _res, next) => {
+  if (!req.user) throw new HttpError(401, 'Please sign in first');
+  if (!req.user.isAdmin) throw new HttpError(403, 'Staff only');
+  next();
+};
+
+// Owners (ADMIN_PHONES) manage the staff list and platform settings.
+export const requireOwner = (req, _res, next) => {
+  if (!req.user) throw new HttpError(401, 'Please sign in first');
+  if (req.user.staffRole !== 'owner') throw new HttpError(403, 'Only Zed Market owners can do this');
+  next();
+};
+
+// `adminPhones`: numbers (any format) that become Zed Market staff accounts when they sign in.
+export function authRoutes(db, { sms = consoleSms, exposeCodes = false, adminPhones = [] } = {}) {
+  const admins = adminSet(adminPhones);
   const router = Router();
 
   router.post('/request-code', async (req, res) => {
@@ -66,7 +104,7 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false } = {}) {
        ON CONFLICT (phone) DO UPDATE SET code_hash = $2, expires_at = EXCLUDED.expires_at, attempts = 0, sent_at = now()`,
       [phone, sha256(`${phone}:${code}`), CODE_TTL_MIN],
     );
-    await sms.send(phone, `Your Amasampo code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`);
+    await sms.send(phone, `Your Zed Market code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`);
     res.json({ sent: true, ...(exposeCodes ? { devCode: code } : {}) });
   });
 
@@ -77,6 +115,7 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false } = {}) {
         code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code we sent you'),
         name: z.string().trim().max(80).optional(),
         accountType: z.enum(['buyer', 'business', 'seller']).optional(),
+        referralCode: z.string().trim().max(20).optional(),
       }),
       req.body,
     );
@@ -97,12 +136,36 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false } = {}) {
     let [user] = await db.query('SELECT * FROM users WHERE phone = $1', [body.phone]);
     const isNew = !user;
     if (isNew) {
-      [user] = await db.query('INSERT INTO users (id, phone, name, account_type) VALUES ($1, $2, $3, $4) RETURNING *', [
-        newId('usr'),
-        body.phone,
-        body.name || 'Amasampo Shopper',
-        body.accountType ?? 'buyer',
-      ]);
+      // Signing up with a friend's invite code earns a welcome voucher (the friend is rewarded later, on delivery).
+      const [inviter] = body.referralCode
+        ? await db.query('SELECT id FROM users WHERE referral_code = upper($1) AND deleted_at IS NULL', [body.referralCode])
+        : [];
+      const name = body.name || 'Zed Market Shopper';
+      [user] = await db.query(
+        `INSERT INTO users (id, phone, name, account_type, referral_code, referred_by)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [newId('usr'), body.phone, name, body.accountType ?? 'buyer', await uniqueReferralCode(db, name), inviter?.id ?? null]
+      );
+      if (inviter) {
+        const { welcomeVoucher, voucherMinSpend, voucherDays } = await getSettings(db);
+        await db.query(
+          `INSERT INTO vouchers (id, user_id, amount, min_spend, reason, related_user_id, expires_at)
+           VALUES ($1, $2, $3, $4, 'welcome', $5, now() + make_interval(days => $6))`,
+          [newId('vch'), user.id, welcomeVoucher, voucherMinSpend, inviter.id, voucherDays]
+        );
+        await notify(db, user.id, {
+          kind: 'voucher',
+          title: `Welcome! K${welcomeVoucher} off your first order`,
+          body: `Your friend's invite gave you a K${welcomeVoucher} voucher for orders of K${voucherMinSpend} or more.`,
+          link: '/account?tab=invite',
+        });
+      }
+    }
+    if (user.suspended_at) {
+      throw new HttpError(
+        403,
+        'This account is suspended. Contact support@zedmarket.co.zm if you think this is a mistake.',
+      );
     }
 
     const token = randomBytes(32).toString('base64url');
@@ -110,7 +173,7 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false } = {}) {
       `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + make_interval(days => $3))`,
       [sha256(token), user.id, SESSION_DAYS],
     );
-    res.json({ token, user: await loadUser(db, user.id), isNew });
+    res.json({ token, user: await loadUser(db, user.id, admins), isNew });
   });
 
   router.post('/logout', async (req, res) => {

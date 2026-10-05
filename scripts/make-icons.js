@@ -1,4 +1,4 @@
-// Draws the Amasampo app icons (orange tile, white "A", green base) as PNG files in public/.
+// Draws the Zed Market app icons (orange tile, white "Z", green base) as PNG files in public/.
 // No image libraries needed: shapes are rasterised here and encoded with Node's zlib.
 // Run with: node scripts/make-icons.js
 const fs = require('fs');
@@ -10,25 +10,25 @@ const AMBER = [245, 158, 11];
 const GREEN = [25, 135, 84];
 const WHITE = [255, 255, 255];
 
-// The letter A as polygons in a 0..1 box: two legs and a crossbar.
+// The letter Z as polygons in a 0..1 box: top bar, diagonal and bottom bar.
 const LETTER = [
   [
-    [0.45, 0.2],
-    [0.555, 0.2],
-    [0.355, 0.74],
-    [0.235, 0.74],
+    [0.27, 0.2],
+    [0.73, 0.2],
+    [0.73, 0.295],
+    [0.27, 0.295],
   ],
   [
-    [0.445, 0.2],
-    [0.555, 0.2],
-    [0.765, 0.74],
-    [0.645, 0.74],
+    [0.6, 0.295],
+    [0.73, 0.295],
+    [0.4, 0.645],
+    [0.27, 0.645],
   ],
   [
-    [0.34, 0.52],
-    [0.66, 0.52],
-    [0.66, 0.605],
-    [0.34, 0.605],
+    [0.27, 0.645],
+    [0.73, 0.645],
+    [0.73, 0.74],
+    [0.27, 0.74],
   ],
 ];
 
