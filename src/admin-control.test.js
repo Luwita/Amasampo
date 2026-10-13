@@ -104,3 +104,44 @@ test('staff mark a parcel delivered for a shop', async () => {
   fireEvent.click(within(order).getByRole('button', { name: 'Confirm' }));
   await waitFor(() => expect(api.__db().orders[0].shipments[0].status).toBe('delivered'));
 });
+
+test('a shop owner whose shop is waiting for approval finds it after signing in', async () => {
+  api.__signIn({
+    name: 'Bwalya',
+    phone: '0977157869',
+    accountType: 'seller',
+    shop: { id: 'shop_new', name: 'Bwalya Hardware', province: 'copperbelt', town: 'Kitwe', area: 'Chisokone', phone: '0977157869', couriers: ['pickup'], verification: 'pending', verified: false },
+  });
+  api.setToken(null); // the page opens signed out, so only approved shops are loaded
+
+  renderAt('/login?next=/seller');
+  type('Phone number', '0977157869');
+  fireEvent.click(screen.getByRole('button', { name: 'Send me a code' }));
+  type(await screen.findByLabelText('6-digit code').then(() => '6-digit code'), '123456');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Sign in' }).at(-1));
+
+  expect(await screen.findByRole('heading', { name: /Bwalya Hardware/ })).toBeInTheDocument();
+  expect(screen.queryByText("You don't have a shop yet")).not.toBeInTheDocument();
+});
+
+test('the owner sets a real courier price and buyers see it at checkout', async () => {
+  const { ownerToken } = setup();
+  api.__addProduct({ id: 'prd_fan', shopId: 'shop_fans', name: 'Standing Fan', category: 'home', price: 500, stock: 10, weightKg: 2 });
+  api.__db().shops.find((s) => s.id === 'shop_fans').couriers = ['pickup', 'yango'];
+
+  api.setToken(ownerToken);
+  const owner = renderAt('/admin?tab=delivery');
+  expect((await screen.findAllByText(/Starting values, not confirmed/)).length).toBeGreaterThan(0);
+  type('Yango Delivery fee, Same town', '55');
+  fireEvent.click(screen.getByRole('button', { name: 'Save Yango Delivery' }));
+  await waitFor(() => expect(api.__db().delivery.couriers.yango.rates.town).toBe('55'));
+  owner.unmount();
+
+  const buyerToken = api.__signIn({ name: 'Chipo Banda', phone: '0966111000' });
+  api.setToken(buyerToken);
+  localStorage.setItem('zedmarket.location', JSON.stringify({ province: 'lusaka', town: 'Lusaka' }));
+  localStorage.setItem('zedmarket.cart', JSON.stringify([{ id: 'prd_fan', qty: 1 }]));
+  renderAt('/checkout');
+  const yango = (await screen.findByLabelText(/Yango Delivery/)).closest('label');
+  expect(within(yango).getByText('K55')).toBeInTheDocument();
+});

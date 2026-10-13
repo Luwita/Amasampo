@@ -321,6 +321,8 @@ export default function SellerDashboard() {
   const { product: editProduct } = useProduct(editing);
 
   if (user?.isAdmin) return <Navigate to="/admin" replace />;
+  // The account has a shop but the shop list is still loading (e.g. just after signing in).
+  if (user?.shopId && !myShop) return <div className="container section muted">Loading your shop…</div>;
   if (!myShop) {
     return (
       <div className="container section narrow">

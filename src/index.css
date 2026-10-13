@@ -1,9 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --primary: #e8590c; /* copper orange, the eagle on the flag */
-  --primary-dark: #c2410c;
-  --primary-soft: #fff1e8;
+  --primary: #0e6b52; /* deep emerald, the green of the flag */
+  --primary-dark: #0a5340;
+  --primary-soft: #e4f3ed;
+  --gold: #f2b53a; /* accent: the logo's base line */
   --green: #198754;
   --green-soft: #e7f6ee;
   --red: #dc2626;

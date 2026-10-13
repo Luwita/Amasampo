@@ -1,13 +1,18 @@
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import Icon from '../components/Icon';
 import ProductGrid from '../components/ProductGrid';
 import { useStore } from '../context/StoreContext';
 import { categories, getCategory } from '../data/catalog';
 import { getProvince, provinces } from '../data/zambia';
 import { useProductSearch } from '../hooks/useProducts';
+import { useIsPhone } from '../phone';
 
 export default function Shop({ wholesale = false }) {
   const { location, lowData } = useStore();
   const [params, setParams] = useSearchParams();
+  const phone = useIsPhone();
+  const [showFilters, setShowFilters] = useState(false); // phones: filters open from a button
   const q = params.get('q') ?? '';
   const cat = params.get('cat') ?? '';
   const prov = params.get('prov') ?? '';
@@ -47,6 +52,7 @@ export default function Shop({ wholesale = false }) {
         ? getCategory(cat)?.name
         : 'All products';
   const isNearMe = prov === location.province && town === location.town;
+  const filterCount = [cat, prov, max, local].filter(Boolean).length;
 
   return (
     <div className="container shop">
@@ -81,7 +87,7 @@ export default function Shop({ wholesale = false }) {
       </div>
 
       <div className="shop-layout">
-        <aside className="card filters">
+        <aside className="card filters" hidden={phone && !showFilters}>
           <h3>Filters</h3>
 
           <label htmlFor="f-prov">Province</label>
@@ -133,6 +139,11 @@ export default function Shop({ wholesale = false }) {
               Clear filters
             </Link>
           )}
+          {phone && (
+            <button className="btn btn-primary btn-block" onClick={() => setShowFilters(false)}>
+              Show {results.total} products
+            </button>
+          )}
         </aside>
 
         <section>
@@ -143,6 +154,11 @@ export default function Shop({ wholesale = false }) {
                 {results.loading && !results.items.length ? 'Searching…' : `${results.total} products ${where}`}
               </span>
             </div>
+            {phone && (
+              <button className={`btn btn-outline btn-sm filter-btn ${showFilters ? 'on' : ''}`} onClick={() => setShowFilters((s) => !s)} aria-expanded={showFilters}>
+                <Icon name="filter" size={18} /> Filters{filterCount > 0 && ` (${filterCount})`}
+              </button>
+            )}
             <select value={sort} onChange={(e) => update({ sort: e.target.value })} aria-label="Sort by">
               {q && <option value="relevance">Best match</option>}
               <option value="nearest">Nearest to me</option>

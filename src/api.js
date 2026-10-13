@@ -165,6 +165,9 @@ export const admin = {
   announcements: () => request('GET', '/admin/announcements'),
   announce: (body) => request('POST', '/admin/announcements', body),
   requests: (params) => request('GET', `/admin/requests?${qs(params)}`),
+  delivery: () => request('GET', '/admin/delivery'),
+  saveCourier: (id, body) => request('PUT', `/admin/delivery/couriers/${id}`, body),
+  savePoints: (points) => request('PUT', '/admin/delivery/points', { points }),
   staff: () => request('GET', '/admin/staff'),
   addStaff: (body) => request('POST', '/admin/staff', body),
   removeStaff: (id) => request('DELETE', `/admin/staff/${id}`),
@@ -180,6 +183,7 @@ export const admin = {
 // ----- Home page banners and seller payouts -----
 export const banners = () => request('GET', '/banners');
 export const settings = () => request('GET', '/settings');
+export const delivery = () => request('GET', '/delivery');
 export const sellerPayouts = () => request('GET', '/seller/payouts');
 
 // ----- Notifications (the bell and red dots) -----

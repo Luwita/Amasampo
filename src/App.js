@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigationType, useParams } from 'react-router-dom';
 import './App.css';
 import './marketplace.css';
 import './phase2.css';
@@ -7,13 +7,17 @@ import './phase3.css';
 import './admin.css';
 import './features.css';
 import './responsive.css';
+import './mobile.css';
 import Footer from './components/Footer';
 import Header from './components/Header';
+import TabBar from './components/TabBar';
+import { useIsPhone } from './phone';
 import { StoreProvider, useStore } from './context/StoreContext';
 import Account from './pages/Account';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import Home from './pages/Home';
+import HomeApp from './pages/HomeApp';
 import Login from './pages/Login';
 import Delivery from './pages/Delivery';
 import { Receipt, Statement } from './pages/Documents';
@@ -24,6 +28,7 @@ import { RequestBoard, RequestDetail } from './pages/BuyingRequests';
 import Help from './pages/Help';
 import Notifications from './pages/Notifications';
 import CasePage from './pages/CasePage';
+import Categories from './pages/Categories';
 import OrderSuccess from './pages/OrderSuccess';
 import ProductDetail from './pages/ProductDetail';
 import Sell from './pages/Sell';
@@ -31,15 +36,41 @@ import SellerDashboard from './pages/SellerDashboard';
 import Shop from './pages/Shop';
 import Stores, { StorePage } from './pages/Stores';
 
+// New screens start at the top; going back returns to where you were (e.g. the same spot in a product list).
+const scrollPositions = new Map();
+
 function ScrollManager() {
-  const { pathname, hash } = useLocation();
+  const { pathname, search, hash, key } = useLocation();
+  const type = useNavigationType();
+
+  useEffect(() => {
+    const remember = () => scrollPositions.set(key, window.scrollY);
+    window.addEventListener('scroll', remember, { passive: true });
+    return () => window.removeEventListener('scroll', remember);
+  }, [key]);
+
   useEffect(() => {
     if (hash) {
       document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
-    } else {
-      window.scrollTo(0, 0);
+      return undefined;
     }
-  }, [pathname, hash]);
+    const saved = type === 'POP' ? scrollPositions.get(key) : 0;
+    if (!saved) {
+      window.scrollTo(0, 0);
+      return undefined;
+    }
+    // The list is fetched again after going back, so wait until the page is tall enough.
+    let tries = 0;
+    const timer = setInterval(() => {
+      const tallEnough = document.documentElement.scrollHeight >= saved + window.innerHeight;
+      if (tallEnough || ++tries > 30) {
+        window.scrollTo(0, saved);
+        clearInterval(timer);
+      }
+    }, 50);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, search, hash]);
   return null;
 }
 
@@ -95,6 +126,7 @@ function NotFound() {
 }
 
 export default function App() {
+  const phone = useIsPhone();
   return (
     <StoreProvider>
       <BrowserRouter>
@@ -104,8 +136,9 @@ export default function App() {
           <OfflineNotice />
           <CatalogStatus />
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={phone ? <HomeApp /> : <Home />} />
             <Route path="/shop" element={<Shop />} />
+            <Route path="/categories" element={<Categories />} />
             <Route path="/wholesale" element={<Shop wholesale />} />
             <Route path="/product/:id" element={<ProductRoute />} />
             <Route path="/cart" element={<Cart />} />
@@ -136,7 +169,7 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
-        <Footer />
+        {phone ? <TabBar /> : <Footer />}
         <Toast />
       </BrowserRouter>
     </StoreProvider>

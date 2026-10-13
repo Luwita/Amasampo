@@ -314,7 +314,7 @@ export default function ProductDetail() {
             {price < product.price && <span className="save"> You save {formatK((product.price - price) * qty)}</span>}
           </div>
 
-          <div className="pdp-buttons">
+          <div className="pdp-buttons buy-bar">
             <button className="btn btn-primary btn-lg" disabled={!product.stock} onClick={add}>
               Add to cart
             </button>

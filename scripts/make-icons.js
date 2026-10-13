@@ -1,13 +1,13 @@
-// Draws the Zed Market app icons (orange tile, white "Z", green base) as PNG files in public/.
+// Draws the Zed Market app icons (emerald tile, white "Z", gold base) as PNG files in public/.
 // No image libraries needed: shapes are rasterised here and encoded with Node's zlib.
 // Run with: node scripts/make-icons.js
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const ORANGE = [232, 89, 12];
-const AMBER = [245, 158, 11];
-const GREEN = [25, 135, 84];
+const EMERALD = [14, 107, 82];
+const EMERALD_LIGHT = [28, 150, 110];
+const GOLD = [242, 181, 58];
 const WHITE = [255, 255, 255];
 
 // The letter Z as polygons in a 0..1 box: top bar, diagonal and bottom bar.
@@ -55,9 +55,9 @@ function sample(x, y, { radius, letterScale }) {
   const lx = (x - 0.5) / letterScale + 0.5;
   const ly = (y - 0.47) / letterScale + 0.47;
   if (LETTER.some((p) => inPolygon(lx, ly, p))) return WHITE;
-  if (y > 0.87) return GREEN;
+  if (y > 0.87) return GOLD;
   const t = (x + y) / 2;
-  return ORANGE.map((c, i) => Math.round(c + (AMBER[i] - c) * t * 0.9));
+  return EMERALD.map((c, i) => Math.round(c + (EMERALD_LIGHT[i] - c) * t * 0.9));
 }
 
 function render(size, options) {
@@ -142,4 +142,14 @@ const icons = [
 for (const [name, size, options] of icons) {
   fs.writeFileSync(path.join(out, name), render(size, options));
   console.log('wrote public/' + name);
+}
+
+// Expo app (mobile/): app icon (iOS rounds the corners itself) and the Android adaptive icon.
+const expoAssets = path.join(__dirname, '..', 'mobile', 'assets');
+if (fs.existsSync(expoAssets)) {
+  fs.writeFileSync(path.join(expoAssets, 'icon.png'), render(1024, { radius: 0, letterScale: 0.9 }));
+  fs.writeFileSync(path.join(expoAssets, 'android-icon-foreground.png'), render(1024, { radius: 0, letterScale: 0.55 }));
+  // Launch screen: the rounded icon on white (see expo-splash-screen in mobile/app.json).
+  fs.writeFileSync(path.join(expoAssets, 'splash-icon.png'), render(512, { radius: 0.22, letterScale: 1 }));
+  console.log('wrote Expo app icons');
 }

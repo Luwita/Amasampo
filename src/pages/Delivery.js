@@ -2,9 +2,15 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import LocationFields from '../components/LocationFields';
 import { useStore } from '../context/StoreContext';
-import { INCLUDED_KG, couriers, formatKg, quote } from '../data/couriers';
+import { INCLUDED_KG, activeCouriers, formatKg, quote } from '../data/couriers';
 import { formatLocation, provinces } from '../data/zambia';
 import { formatK } from '../utils/format';
+
+// Lowest extra-kg rate a courier charges, ignoring distances it doesn't cover.
+const perKgFrom = (c) => {
+  const values = Object.values(c.perKg ?? {}).filter((v) => typeof v === 'number' || (typeof v === 'string' && v !== ''));
+  return values.length ? Math.min(...values.map(Number)) : null;
+};
 
 const BAND_LABEL = { town: 'Same town', province: 'Same province', national: 'Province to province' };
 
@@ -14,6 +20,7 @@ export default function Delivery() {
   const [to, setTo] = useState(location);
   const [weight, setWeight] = useState(2);
 
+  const couriers = activeCouriers();
   const fakeShop = { ...from, couriers: couriers.map((c) => c.id) };
   const quotes = couriers
     .filter((c) => c.id !== 'pickup')
@@ -43,16 +50,18 @@ export default function Delivery() {
               <h3>{c.name}</h3>
               <p className="muted">{c.description}</p>
               <ul className="rate-list small">
-                {Object.entries(c.rates).map(([b, fee]) => (
+                {Object.entries(c.rates)
+                  .filter(([, fee]) => fee !== null && fee !== undefined && fee !== '')
+                  .map(([b, fee]) => (
                   <li key={b}>
                     <span>{BAND_LABEL[b]}</span>
                     <strong>{fee ? `from ${formatK(fee)}` : 'Free'}</strong>
                   </li>
                 ))}
               </ul>
-              {c.perKg && (
+              {perKgFrom(c) !== null && (
                 <p className="muted small">
-                  Includes {INCLUDED_KG} kg, then from {formatK(Math.min(...Object.values(c.perKg)))}/kg
+                  Includes {INCLUDED_KG} kg, then from {formatK(perKgFrom(c))}/kg
                   {c.maxKg ? ` · max ${c.maxKg} kg` : ''}
                 </p>
               )}

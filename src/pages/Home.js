@@ -14,7 +14,7 @@ const standardSlides = [
     text: 'Solar panels, inverters & lithium batteries from trusted local shops at wholesale Kwacha prices.',
     cta: 'Shop Solar & Power',
     to: '/shop?cat=solar',
-    bg: 'linear-gradient(120deg, #0b6e4f 0%, #198754 55%, #f9a825 140%)',
+    bg: 'linear-gradient(120deg, #0a5340 0%, #0e6b52 55%, #2fa37c 130%)',
     icon: '☀️',
   },
   {
@@ -22,7 +22,7 @@ const standardSlides = [
     text: 'Buy in bulk from sellers across Zambia. Prices drop as your order grows. Pay with Mobile Money.',
     cta: 'Start buying wholesale',
     to: '/wholesale',
-    bg: 'linear-gradient(120deg, #c2410c 0%, #ea580c 60%, #fbbf24 140%)',
+    bg: 'linear-gradient(120deg, #1e3a5f 0%, #24527a 60%, #2fa37c 140%)',
     icon: '📦',
   },
   {
@@ -42,20 +42,12 @@ const promises = [
   { icon: '🤝', title: '1-on-1 seller support', text: 'Help to list products and start selling' },
 ];
 
-export default function Home() {
-  const { shops, location, lowData } = useStore();
+// The banner carousel: campaign banners set by Zed Market staff come before the standard slides.
+export function useHeroSlides() {
+  const { lowData } = useStore();
   const [slide, setSlide] = useState(0);
-  const [stats, setStats] = useState({});
   const [banners, setBanners] = useState([]);
 
-  useEffect(() => {
-    api
-      .provinceStats()
-      .then(setStats)
-      .catch(() => {});
-  }, []);
-
-  // Campaign banners set by Zed Market staff come before the standard slides.
   useEffect(() => {
     api
       .banners()
@@ -74,6 +66,48 @@ export default function Home() {
     return () => clearInterval(t);
   }, [lowData, slides.length]);
 
+  return { slides, slide: slide % slides.length, setSlide };
+}
+
+export function Hero() {
+  const { lowData } = useStore();
+  const { slides, slide, setSlide } = useHeroSlides();
+  const s = slides[slide];
+  return (
+    <div className="hero" style={{ background: s.bg }}>
+      <div className="hero-copy">
+        <span className="hero-kicker">ZED MARKET · Zambia's marketplace</span>
+        <h1>{s.title}</h1>
+        <p>{s.text}</p>
+        <Link to={s.to} className="btn btn-light">
+          {s.cta} →
+        </Link>
+      </div>
+      {s.image && !lowData ? (
+        <img className="hero-image" src={s.image} alt="" />
+      ) : (
+        s.icon && <div className="hero-icon">{s.icon}</div>
+      )}
+      <div className="dots">
+        {slides.map((_, i) => (
+          <button key={i} className={i === slide ? 'on' : ''} aria-label={`Slide ${i + 1}`} onClick={() => setSlide(i)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Home() {
+  const { shops, location, user } = useStore();
+  const [stats, setStats] = useState({});
+
+  useEffect(() => {
+    api
+      .provinceStats()
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
   const province = getProvince(location.province);
   const near = useProductSearch({
     prov: location.province,
@@ -88,8 +122,6 @@ export default function Home() {
   const popular = useProductSearch({ sort: 'popular', limit: 24 }).items;
   const shopsNearby = shops.filter((s) => s.province === location.province).length;
 
-  const s = slides[slide % slides.length];
-
   return (
     <div className="home">
       <section className="container hero-grid">
@@ -102,31 +134,7 @@ export default function Home() {
           ))}
         </aside>
 
-        <div className="hero" style={{ background: s.bg }}>
-          <div className="hero-copy">
-            <span className="hero-kicker">ZED MARKET · Zambia's marketplace</span>
-            <h1>{s.title}</h1>
-            <p>{s.text}</p>
-            <Link to={s.to} className="btn btn-light">
-              {s.cta} →
-            </Link>
-          </div>
-          {s.image && !lowData ? (
-            <img className="hero-image" src={s.image} alt="" />
-          ) : (
-            s.icon && <div className="hero-icon">{s.icon}</div>
-          )}
-          <div className="dots">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                className={i === slide % slides.length ? 'on' : ''}
-                aria-label={`Slide ${i + 1}`}
-                onClick={() => setSlide(i)}
-              />
-            ))}
-          </div>
-        </div>
+        <Hero />
 
         <aside className="hero-side">
           <div className="card side-card side-accent">
@@ -184,13 +192,15 @@ export default function Home() {
         </section>
       )}
 
-      <section className="container section">
-        <div className="section-head deals-head">
-          <h2>⚡ Flash deals</h2>
-          <Link to="/shop?sort=deals">See all →</Link>
-        </div>
-        <ProductRow items={deals} />
-      </section>
+      {deals.length > 0 && (
+        <section className="container section">
+          <div className="section-head deals-head">
+            <h2>⚡ Flash deals</h2>
+            <Link to="/shop?sort=deals">See all →</Link>
+          </div>
+          <ProductRow items={deals} />
+        </section>
+      )}
 
       <section className="container section">
         <div className="section-head">
@@ -243,20 +253,37 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="container section">
-        <div className="section-head">
-          <h2>🇿🇲 Made in Zambia</h2>
-          <Link to="/shop?local=1">See all →</Link>
-        </div>
-        <ProductRow items={local} />
-      </section>
+      {local.length > 0 && (
+        <section className="container section">
+          <div className="section-head">
+            <h2>🇿🇲 Made in Zambia</h2>
+            <Link to="/shop?local=1">See all →</Link>
+          </div>
+          <ProductRow items={local} />
+        </section>
+      )}
 
       <section className="container section">
         <div className="section-head">
           <h2>Popular across Zambia</h2>
-          <Link to="/shop?sort=popular">See all →</Link>
+          {popular.length > 0 && <Link to="/shop?sort=popular">See all →</Link>}
         </div>
-        <ProductRow items={popular} rows={2} />
+        {popular.length > 0 ? (
+          <ProductRow items={popular} rows={2} />
+        ) : (
+          <div className="card empty">
+            <div className="empty-icon">🏪</div>
+            <h3>Zed Market is just opening</h3>
+            <p className="muted">
+              Shops across Zambia are signing up and being checked by our team. Their products will appear here soon.
+            </p>
+            {!user?.isAdmin && (
+              <Link to="/sell" className="btn btn-primary">
+                Open your shop
+              </Link>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );

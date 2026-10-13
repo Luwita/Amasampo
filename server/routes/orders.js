@@ -5,6 +5,7 @@ import { requireUser } from '../auth.js';
 import { HttpError, newId, newOrderId, parse } from '../http.js';
 import { toProduct, toShop } from '../mappers.js';
 import { getSettings } from '../settings.js';
+import { loadDelivery } from '../delivery.js';
 import { formatK } from '../../src/utils/format.js';
 import { notify, notifyBuyerOfOrder, notifyShopOwner } from '../notify.js';
 import { cancelShipment, isLive, loadOrders, myShopOrFail } from '../queries.js';
@@ -47,6 +48,7 @@ async function loadCoupons(q, code, shopIds, buyerId, lock) {
 
 // Prices a cart for a buyer from the database. With `lock`, rows are locked for the order transaction.
 async function priceForBuyer(q, user, body, lock) {
+  await loadDelivery(q); // the latest courier rates and Zed Market Points saved by staff
   const lockSql = lock ? 'FOR UPDATE' : '';
   const products = (
     await q.query(`SELECT * FROM products WHERE id = ANY($1) AND deleted_at IS NULL ${lockSql}`, [

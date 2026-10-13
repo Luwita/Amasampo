@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { Link, NavLink, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { categories } from '../data/catalog';
 import { getProvince } from '../data/zambia';
 import { useStore } from '../context/StoreContext';
+import { useIsPhone } from '../phone';
+import Icon from './Icon';
 import LocationFields from './LocationFields';
 
 function LocationButton() {
@@ -46,17 +48,74 @@ function LocationButton() {
   );
 }
 
+// Screens opened from a bottom tab: they show the logo; every other screen shows a back arrow.
+const TAB_ROOTS = ['/', '/categories', '/messages', '/cart', '/account', '/login'];
+
+// Phone layout: one row with search and alerts. The other sections are in the bottom tab bar.
+function AppHeader({ query, setQuery, onSearch }) {
+  const { user, notificationCount } = useStore();
+  const { pathname, key } = useLocation();
+  const navigate = useNavigate();
+  const root = TAB_ROOTS.includes(pathname);
+
+  // The search box shows what is being searched; away from the results it is empty again.
+  useEffect(() => {
+    if (pathname !== '/shop' && pathname !== '/wholesale') setQuery('');
+  }, [pathname, setQuery]);
+
+  return (
+    <header className="site-header app-header">
+      <div className="container app-bar">
+        {root ? (
+          <Link to="/" className="logo" aria-label="Zed Market home">
+            <span className="logo-mark">Z</span>
+          </Link>
+        ) : (
+          // Opened straight from a link (no page to go back to): go home instead.
+          <button className="icon-btn back-btn" aria-label="Back" onClick={() => (key === 'default' ? navigate('/') : navigate(-1))}>
+            <Icon name="back" />
+          </button>
+        )}
+        <form className="search" onSubmit={onSearch} role="search">
+          <Icon name="search" size={20} />
+          <input
+            type="search"
+            enterKeyHint="search"
+            placeholder="Search products"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search products"
+          />
+          <button type="submit">Search</button>
+        </form>
+        <Link to={user ? '/notifications' : '/login?next=/notifications'} className="action" aria-label="Alerts">
+          <Icon name="bell" />
+          {notificationCount > 0 && <span className="badge-count">{notificationCount}</span>}
+        </Link>
+      </div>
+      {(pathname === '/' || pathname === '/shop' || pathname === '/categories') && (
+        <div className="container app-loc">
+          <LocationButton />
+        </div>
+      )}
+    </header>
+  );
+}
+
 export default function Header() {
   const { cartCount, user, wishlist, location, myShop, unreadMessages, notificationCount, toDispatchCount, canInstall, install } = useStore();
   const [params] = useSearchParams();
   const [query, setQuery] = useState(params.get('q') ?? '');
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const phone = useIsPhone();
 
   const onSearch = (e) => {
     e.preventDefault();
     navigate(query.trim() ? `/shop?q=${encodeURIComponent(query.trim())}` : '/shop');
   };
+
+  if (phone) return <AppHeader query={query} setQuery={setQuery} onSearch={onSearch} />;
 
   const nearMe = `/shop?prov=${location.province}&town=${encodeURIComponent(location.town)}`;
 

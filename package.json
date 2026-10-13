@@ -25,7 +25,9 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:server": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"server/**/*.test.js\"",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "reset:catalog": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=server/.env scripts/reset-catalog.js",
+    "sms:test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=server/.env scripts/sms-test.js"
   },
   "eslintConfig": {
     "extends": [

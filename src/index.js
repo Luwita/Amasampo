@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+import { watchKeyboard } from './phone';
 import reportWebVitals from './reportWebVitals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
@@ -10,6 +11,8 @@ root.render(
     <App />
   </React.StrictMode>,
 );
+
+watchKeyboard();
 
 // The service worker (public/sw.js) makes Zed Market installable and usable offline.
 // Only in production builds: in development it would serve stale files while you edit.

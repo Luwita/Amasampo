@@ -162,13 +162,13 @@ hr {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--primary), #f59e0b);
+  background: linear-gradient(135deg, var(--primary), #1c966e);
   color: #fff;
   font-weight: 800;
   font-size: 1.3rem;
   display: grid;
   place-items: center;
-  box-shadow: inset 0 -4px 0 var(--green);
+  box-shadow: inset 0 -4px 0 var(--gold);
 }
 .logo-text {
   font-size: 1.5rem;
@@ -1021,7 +1021,7 @@ select:focus {
   margin-bottom: 24px;
 }
 .sell-hero {
-  background: linear-gradient(120deg, var(--primary-dark), var(--primary) 60%, #f59e0b);
+  background: linear-gradient(120deg, var(--primary-dark), var(--primary) 60%, #2fa37c);
 }
 .logistics-hero {
   background: linear-gradient(120deg, #0b1220, #1f2937 60%, var(--green));

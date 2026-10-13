@@ -1,7 +1,8 @@
 import { pointsIn } from './pickupPoints.js';
 
-// Zambian delivery options a shop can offer. Fees (ZMW) and times are indicative
-// placeholders per distance band. Replace them with the rates agreed with each courier.
+// Zambian delivery options a shop can offer, with fees (ZMW) and times per distance band.
+// The values below are only starting points: staff enter the rates agreed with each courier in
+// Admin → Delivery, which are saved in the database and applied with applyCourierConfig().
 //   town     = seller and buyer in the same town
 //   province = same province, different town
 //   national = different provinces
@@ -90,10 +91,32 @@ export const couriers = [
   },
 ];
 
+// Fields staff can change in Admin → Delivery. Everything else (id, icon, how a courier works) stays in code.
+export const EDITABLE_COURIER_FIELDS = ['description', 'rates', 'perKg', 'maxKg', 'eta', 'towns', 'cod', 'disabled'];
+const DEFAULT_COURIERS = JSON.parse(JSON.stringify(couriers));
+
+// Replaces the editable fields with saved values (or the defaults for couriers with nothing saved).
+// The courier objects are updated in place so every import sees the new rates.
+export function applyCourierConfig(saved = {}) {
+  for (const courier of couriers) {
+    const base = DEFAULT_COURIERS.find((d) => d.id === courier.id);
+    const override = saved[courier.id];
+    for (const key of EDITABLE_COURIER_FIELDS) {
+      const value = override && key in override ? override[key] : base[key];
+      if (value === undefined) delete courier[key];
+      else courier[key] = JSON.parse(JSON.stringify(value));
+    }
+    courier.confirmed = !!override;
+  }
+}
+applyCourierConfig();
+
 export const getCourier = (id) => couriers.find((c) => c.id === id);
 
 // Options a shop chooses itself (Zed Market Points are offered for every shop).
 export const shopCouriers = couriers.filter((c) => !c.network);
+// Delivery options shown to shops and buyers (a courier staff switched off is hidden).
+export const activeCouriers = () => couriers.filter((c) => !c.disabled);
 
 // Every delivery option open for a shop's parcels: its own choices plus the Zed Market network.
 export const offeredBy = (shop) => [...new Set([...shop.couriers, ...couriers.filter((c) => c.network).map((c) => c.id)])];
@@ -109,7 +132,7 @@ export const bandRank = { town: 0, province: 1, national: 2 };
 // Price and time for one courier taking a parcel of `weightKg` from a shop to a buyer, or null if not offered.
 export function quote(courierId, shop, to, weightKg = 1) {
   const courier = getCourier(courierId);
-  if (!courier) return null;
+  if (!courier || courier.disabled) return null;
   const b = band(shop, to);
   if (courier.towns && (b !== 'town' || !courier.towns.includes(shop.town))) return null;
   if (courier.maxKg && weightKg > courier.maxKg) return null;
@@ -137,6 +160,6 @@ export const bestDelivery = (shop, to, weightKg = 1) =>
 export const tooHeavyFor = (shop, weightKg) =>
   offeredBy(shop)
     .map(getCourier)
-    .filter((c) => c?.maxKg && weightKg > c.maxKg);
+    .filter((c) => c && !c.disabled && c.maxKg && weightKg > c.maxKg);
 
 export const formatKg = (kg) => (kg >= 10 ? `${Math.round(kg)} kg` : `${Number(kg.toFixed(1))} kg`);

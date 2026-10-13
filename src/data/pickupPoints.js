@@ -1,6 +1,7 @@
 // Zed Market Points: collection points where buyers pick up parcels sent by any shop.
-// PLACEHOLDER locations for the demo. Replace with the real partner outlets before launch.
-export const pickupPoints = [
+// These are starting EXAMPLES only. Staff enter the real partner outlets in Admin → Delivery; the saved list
+// replaces this one through applyPointConfig().
+const EXAMPLE_POINTS = [
   { id: 'lsk-cairo', province: 'lusaka', town: 'Lusaka', name: 'Zed Market Point Cairo Road', address: 'Cairo Road, town centre', hours: 'Mon–Sat 08:00–18:00' },
   { id: 'lsk-east', province: 'lusaka', town: 'Lusaka', name: 'Zed Market Point Great East Road', address: 'Great East Road', hours: 'Mon–Sat 08:00–18:00' },
   { id: 'kafue', province: 'lusaka', town: 'Kafue', name: 'Zed Market Point Kafue', address: 'Town centre', hours: 'Mon–Sat 08:00–17:00' },
@@ -18,6 +19,16 @@ export const pickupPoints = [
   { id: 'mongu', province: 'western', town: 'Mongu', name: 'Zed Market Point Mongu', address: 'Town centre', hours: 'Mon–Sat 08:00–17:00' },
 ];
 
-export const pointsIn = ({ province, town }) => pickupPoints.filter((p) => p.province === province && p.town === town);
-export const getPickupPoint = (id) => pickupPoints.find((p) => p.id === id);
+export const pickupPoints = [];
+
+// Uses the saved list of points, or the examples while nothing has been saved. Updated in place for every import.
+export function applyPointConfig(saved = null) {
+  const list = saved ?? EXAMPLE_POINTS.map((p) => ({ ...p, example: true }));
+  pickupPoints.splice(0, pickupPoints.length, ...list.map((p) => ({ active: true, ...p })));
+}
+applyPointConfig();
+
+export const pointsIn = ({ province, town }) =>
+  pickupPoints.filter((p) => p.active && p.province === province && p.town === town);
+export const getPickupPoint = (id) => pickupPoints.find((p) => p.id === id && p.active);
 export const describePoint = (p) => `${p.name}, ${p.address}, ${p.town}`;

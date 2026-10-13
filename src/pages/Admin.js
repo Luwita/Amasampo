@@ -4,6 +4,7 @@ import * as api from '../api';
 import { ReasonButton, SearchBox, date, useAdminList } from '../components/adminKit';
 import { Analytics, Marketing, Payouts, RequestModeration } from '../components/AdminTools';
 import { EditProduct, EditShop, ParcelControls, Settings, Staff } from '../components/AdminControl';
+import { DeliverySettings } from '../components/AdminDelivery';
 import { CASE_STATUS } from '../components/ShipmentStatus';
 import { useStore } from '../context/StoreContext';
 import { formatLocation } from '../data/zambia';
@@ -651,6 +652,7 @@ const TABS = [
   ['requests', 'Buying requests', RequestModeration],
   ['support', 'Support', Support],
   ['staff', 'Staff', Staff],
+  ['delivery', 'Delivery', DeliverySettings],
   ['settings', 'Settings', Settings],
   ['activity', 'Activity log', Activity],
 ];

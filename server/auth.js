@@ -5,6 +5,7 @@ import { normalizePhone } from '../src/utils/format.js';
 import { HttpError, newId, parse } from './http.js';
 import { toUser } from './mappers.js';
 import { getSettings } from './settings.js';
+import { consoleSms } from './sms.js';
 import { notify } from './notify.js';
 
 // A short, shareable invite code such as CHANDA42K.
@@ -30,12 +31,6 @@ const phoneSchema = z
   .transform(normalizePhone)
   .refine((p) => /^[79]\d{8}$/.test(p), 'Enter a valid Zambian mobile number, e.g. 097 123 4567');
 
-// Delivers sign-in codes. Until an SMS provider is connected, codes are printed to the server console.
-export const consoleSms = {
-  async send(phone, message) {
-    console.log(`[sms] to 0${phone}: ${message}`);
-  },
-};
 
 // Suspended accounts load as nobody, so their sessions stop working everywhere at once.
 // Owners are the ADMIN_PHONES numbers (checked on every request, so removing a number revokes access at once);
@@ -104,7 +99,18 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false, adminPho
        ON CONFLICT (phone) DO UPDATE SET code_hash = $2, expires_at = EXCLUDED.expires_at, attempts = 0, sent_at = now()`,
       [phone, sha256(`${phone}:${code}`), CODE_TTL_MIN],
     );
-    await sms.send(phone, `Your Zed Market code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`);
+    try {
+      await sms.send(phone, `Your Zed Market code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`);
+    } catch (err) {
+      // In development the code is shown on screen anyway, so a broken SMS setup doesn't block signing in.
+      if (exposeCodes) {
+        console.error(`[sms] not sent (development: the code is shown on the sign-in screen): ${err.message}`);
+        return res.json({ sent: false, devCode: code });
+      }
+      // Nothing was sent, so don't make the person wait before trying again.
+      await db.query('DELETE FROM otp_codes WHERE phone = $1', [phone]);
+      throw err;
+    }
     res.json({ sent: true, ...(exposeCodes ? { devCode: code } : {}) });
   });
 

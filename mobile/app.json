@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Zed Market",
+    "slug": "zed-market",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "zm.co.zedmarket.app"
+    },
+    "android": {
+      "package": "zm.co.zedmarket.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0e6b52",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#ffffff",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 120
+        }
+      ]
+    ]
+  }
+}

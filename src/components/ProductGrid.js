@@ -1,9 +1,20 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ProductCard from './ProductCard';
 
 // A grid of search results with a "Load more" button for the next page.
-export default function ProductGrid({ result, columns = 4, empty = null }) {
+// With `auto`, the next page loads by itself when the shopper scrolls near the end (the phone home feed).
+export default function ProductGrid({ result, columns = 4, empty = null, auto = false }) {
   const { items, total, loading, error, hasMore, loadMore } = result;
+  const more = useRef(null);
+
+  useEffect(() => {
+    const el = more.current;
+    if (!auto || !el || !hasMore || loading || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => entries[0].isIntersecting && loadMore(), { rootMargin: '600px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [auto, hasMore, loading, loadMore]);
+
   if (error) return <div className="card empty error">{error}</div>;
   if (!items.length) return loading ? <div className="grid-loading muted">Loading products…</div> : empty;
   return (
@@ -14,7 +25,7 @@ export default function ProductGrid({ result, columns = 4, empty = null }) {
         ))}
       </div>
       {hasMore && (
-        <div className="load-more">
+        <div className="load-more" ref={more}>
           <span className="muted small">
             Showing {items.length} of {total}
           </span>

@@ -118,6 +118,8 @@ export default function Sell() {
                 Continue with my phone number
               </Link>
             </div>
+          ) : user.shopId ? (
+            <p className="muted center">Loading your shop…</p>
           ) : user.isAdmin ? (
             <div className="empty">
               <h2>Staff accounts can't have a shop</h2>

@@ -3,6 +3,7 @@ import * as api from '../api';
 import { unitPrice } from '../data/catalog';
 import { describeChoice, lineKey } from '../data/options';
 import { DEFAULT_LOCATION } from '../data/zambia';
+import { applyDeliveryConfig } from '../data/delivery';
 
 const StoreContext = createContext(null);
 
@@ -65,7 +66,10 @@ export function StoreProvider({ children }) {
 
   const loadShops = useCallback(async () => {
     try {
-      setShopsState({ shops: await api.getShops(), status: 'ready', error: null });
+      // Courier rates and Zed Market Points are applied before any price is shown.
+      const [shops, delivery] = await Promise.all([api.getShops(), api.delivery().catch(() => null)]);
+      if (delivery) applyDeliveryConfig(delivery);
+      setShopsState({ shops, status: 'ready', error: null });
     } catch (err) {
       setShopsState((s) => ({ ...s, status: 'error', error: err.message }));
     }
@@ -92,8 +96,14 @@ export function StoreProvider({ children }) {
     setOrdersReady(true);
   }, []);
 
+  // Owners also get their own shop while it waits for approval, so the list depends on who is signed in:
+  // reload it whenever that changes (sign in, sign out, switching numbers).
+  const userId = user?.id;
   useEffect(() => {
     loadShops();
+  }, [loadShops, userId]);
+
+  useEffect(() => {
     if (api.getToken()) {
       api
         .me()

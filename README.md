@@ -12,8 +12,13 @@ npm run dev      # React app on http://localhost:3000 + API on http://localhost:
 ```
 
 No database install is needed for development: the API uses [PGlite](https://pglite.dev) (Postgres running inside
-Node) and stores data in `server/.data/`. Demo shops and products are added on first start. Delete
-`server/.data/` to start over.
+Node) and stores data in `server/.data/`. The marketplace starts empty: shop owners sign up and add their
+products, and staff approve each shop before buyers can see it. To try it with demo shops and products instead, set
+`SEED_DEMO=1` in `server/.env` before the first start.
+
+To remove every shop, product and order (keeping user accounts, staff and settings), stop `npm run dev` and run
+`npm run reset:catalog -- --yes`. A backup of the local database is saved in `server/.data/` first. Delete
+`server/.data/` to start over completely.
 
 Signing in uses a 6-digit code. Until an SMS provider is connected, the code is printed in the API terminal and
 shown on the sign-in screen (development only).
@@ -34,7 +39,7 @@ React app (src/)  ──/api──▶  Express API (server/)  ──SQL──▶
   from the API (`src/api.js`, `src/context/StoreContext.js`).
 - **server/**: Express API. `routes/` (catalogue, orders, reviews, seller tools), `queries.js` (search and shared
   SQL), `schemas.js` (request validation), `auth.js` (phone sign-in codes and sessions), `migrations/` (database
-  schema, applied automatically on start), `seed.js` (demo data).
+  schema, applied automatically on start), `seed.js` (demo data, only with `SEED_DEMO=1`).
 - **src/data/**: shared by both sides: provinces and towns, couriers and weight-based delivery pricing, product
   options, search synonyms (`search.js`), platform fees (`fees.js`: commission, VAT, featured-listing limits), and
   `pricing.js`, which prices an order including discount codes and agreed wholesale prices. The server always
@@ -86,6 +91,36 @@ Copy `server/.env.example` to `server/.env` to change settings. For production:
 The app can be installed on phones ("Add to home screen" / the Install button) once it is served over HTTPS.
 The service worker only runs in production builds, so it never serves stale files during development.
 
+## Expo app (iPhone and Android)
+
+`mobile/` is an [Expo](https://expo.dev) app. It shows the phone layout of the web app full-screen from the Zed
+Market server and adds the phone-app parts around it ([mobile/App.js](mobile/App.js)): safe areas, a launch screen,
+the Android back button, the phone's share sheet, printing receipts, opening WhatsApp/phone/maps links in their own
+apps, and a "can't connect" screen.
+
+The phone layout itself is in the web app: [src/pages/HomeApp.js](src/pages/HomeApp.js) (banner, shortcuts,
+categories, Retail/Wholesale feed), [src/components/TabBar.js](src/components/TabBar.js) and
+[src/mobile.css](src/mobile.css). Going back to a list returns to the same place in it.
+
+Expo Go on an iPhone only opens the project when the terminal (`npx expo login`) and Expo Go are signed in to the
+same Expo account. If `npx expo login` crashes on Windows while opening the browser, run
+`npx expo login -u your-username` instead.
+
+To run it on your own phone, install **Expo Go** from the App Store or Play Store, connect the phone to the same
+Wi-Fi as this computer, then:
+
+```bash
+npm run build && npm run server      # terminal 1: the website and API on port 4000
+cd mobile && npm install && npx expo start   # terminal 2: shows a QR code
+```
+
+Scan the QR code (iPhone: Camera app; Android: inside Expo Go). The app finds the server on this computer by
+itself. After changing the web app, run `npm run build` again and reopen the app.
+
+For the App Store and Google Play, set `EXPO_PUBLIC_WEB_URL` to the hosted `https://` address
+(see [mobile/.env.example](mobile/.env.example)) and build in Expo's cloud with `npx eas-cli@latest build`; no Mac
+is needed for the build, but the App Store needs an Apple Developer account.
+
 ## Selling tools
 
 - **Messages:** buyers ask a shop about a product; both sides see unread counts. Messages poll every few seconds;
@@ -97,7 +132,7 @@ The service worker only runs in production builds, so it never serves stale file
 - **Wholesale price requests:** a buyer asks for a price on a quantity; the shop answers with a price valid for
   1–14 days; the buyer accepts and can order exactly that quantity at that price, once.
 - **Receipts and statements:** printable buyer receipts show each shop's TPIN and the VAT included for
-  VAT-registered shops. Monthly seller statements show commission (`COMMISSION_RATE`, a placeholder 5%) and payout.
+  VAT-registered shops. Monthly seller statements show commission (set in Admin → Settings) and payout.
 
 ## Cancellations, returns and disputes
 
@@ -161,9 +196,9 @@ collected (uploaded files are reachable by URL).
 - **Invite & vouchers** (My account): every customer has an invite code and share link (`/login?ref=CODE`). A friend
   who joins with it gets a K50 voucher; the inviter gets K50 when the friend's first order is delivered. Vouchers
   are paid for by Zed Market (not the shop), need K300 of products, last 60 days, and come back if the whole order
-  is cancelled. Amounts are in [src/data/fees.js](src/data/fees.js).
-- **Zed Market Points**: collection points where any shop can send a parcel for the buyer to collect. The list in
-  [src/data/pickupPoints.js](src/data/pickupPoints.js) is a **placeholder**; replace it with real partner outlets.
+  is cancelled. Owners change the amounts in Admin → Settings.
+- **Zed Market Points**: collection points where any shop can send a parcel for the buyer to collect. Owners add the
+  real partner outlets in Admin → Delivery; until then buyers see example points that are not real places.
 - **Resell in my shop**: a shop owner can list another shop's product in their own shop with a 15% margin to
   start from. They buy it from the supplier (or use their own stock) and send it themselves.
 - **Shop pages**: cover photo, about text, opening hours, directions (Google Maps) and share buttons
@@ -185,8 +220,26 @@ collected (uploaded files are reachable by URL).
 
 Base fees cover a parcel up to 5 kg; heavier parcels pay a per-kg rate, and couriers with a weight limit
 (e.g. Yango 20 kg, Zampost 30 kg) are not offered for heavier parcels. Every product has a weight per unit.
-Fees, per-kg rates, limits and delivery times are **placeholders**. Replace them with the rates agreed with
-each courier.
+The values in [src/data/couriers.js](src/data/couriers.js) are only **starting values**. Owners enter the rates
+agreed with each courier in **Admin → Delivery**: fee per distance, extra-kg rate, heaviest parcel, delivery times,
+Yango towns, pay on delivery, or switch a courier off. Blank fees mean the courier doesn't cover that distance.
+Saved rates are stored in the database and used by checkout and the server straight away; past orders keep the fee
+they were charged. Each courier shows "⚠ not confirmed" until it has been saved.
+
+## SMS (Africa's Talking)
+
+Sign-in codes are sent by SMS through [Africa's Talking](https://africastalking.com). Set these in `server/.env`
+(see `server/.env.example`) and restart the API:
+
+| Setting | Testing | Live |
+| --- | --- | --- |
+| `AT_USERNAME` | `sandbox` | your app's username |
+| `AT_API_KEY` | the sandbox API key | the live app's API key |
+| `AT_SENDER_ID` | leave out | your approved sender ID (optional) |
+
+Check the connection with `npm run sms:test -- 0977123456`. The API window shows which SMS provider is in use when it
+starts. Without these settings, codes are printed in the API window instead. If a message can't be sent, the
+person sees "We couldn't send the SMS" and can try again straight away; the reason is written in the API window.
 
 ## Search
 
@@ -204,8 +257,7 @@ the dashboard.
 
 ## Still to do before launch
 
-- **SMS provider** for sign-in codes. In production (`NODE_ENV=production`) codes are only written to the server
-  log, so nobody can sign in until this is connected (see `consoleSms` in `server/auth.js`).
+- **SMS provider:** connected through Africa's Talking (see below); add your live API key before launch.
 - **Mobile Money and card payments**: orders paid by MoMo or card are currently recorded as paid without charging
   anyone. Needs a payment provider, held funds until delivery, and seller payouts.
 - **SMS/WhatsApp copies of notifications**: notifications are in the app only for now.
@@ -213,7 +265,8 @@ the dashboard.
   Office of the Data Protection Commissioner as required.
 - **Tax:** receipts are not ZRA Smart Invoices. Shops that must issue fiscal invoices still need to do so, and
   Zed Market's own commission invoicing needs ZRA integration.
-- **Commission rate:** set the real rate in `src/data/fees.js`.
+- **Real delivery data:** enter courier rates and Zed Market Points in Admin → Delivery, and the commission rate in
+  Admin → Settings.
 - **Photo storage** in object storage (S3-compatible) for multi-server hosting; photos are currently saved to disk.
 - A search index (e.g. a trigram index over product name, description and shop) once the catalogue reaches tens of
   thousands of products. Synonym and town matching currently scan the product table.

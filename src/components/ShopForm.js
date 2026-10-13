@@ -188,7 +188,7 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
       <h3>How do you deliver?</h3>
       <p className="muted small">Buyers will see these options with prices to their town.</p>
       <div className="courier-pick">
-        {couriers.map((c) => (
+        {couriers.filter((c) => !c.disabled).map((c) => (
           <label key={c.id} className={`pay-option ${form.couriers.includes(c.id) ? 'on' : ''}`}>
             <input type="checkbox" checked={form.couriers.includes(c.id)} onChange={() => toggleCourier(c.id)} />
             <span className="pay-icon">{c.icon}</span>

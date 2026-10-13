@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ProductImage } from '../components/ProductCard';
 import { useStore } from '../context/StoreContext';
 import { formatLocation } from '../data/zambia';
+import { useIsPhone } from '../phone';
 import { formatK } from '../utils/format';
 
 export const groupByShop = (items) =>
@@ -15,6 +16,7 @@ export const groupByShop = (items) =>
   );
 
 export default function Cart() {
+  const phone = useIsPhone();
   const {
     items,
     selectedItems,
@@ -52,7 +54,7 @@ export default function Cart() {
   const selectedShops = groupByShop(selectedItems).length;
 
   return (
-    <div className="container section">
+    <div className="container section cart-page">
       <h1>Cart ({items.length})</h1>
       <div className="cart-layout">
         <div className="cart-groups">
@@ -176,6 +178,18 @@ export default function Cart() {
           )}
         </aside>
       </div>
+
+      {phone && selectedItems.length > 0 && (
+        <div className="cart-bar">
+          <div>
+            <span className="muted small">Subtotal</span>
+            <strong>{formatK(subtotal)}</strong>
+          </div>
+          <Link to="/checkout" className="btn btn-primary">
+            Checkout ({selectedItems.length})
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,9 @@ import { band, bandRank } from '../data/couriers';
 import { priceOrder, OrderError } from '../data/pricing';
 import { expandSearch } from '../data/search';
 import { VOUCHER_MIN_SPEND, WELCOME_VOUCHER } from '../data/fees';
+import { EDITABLE_COURIER_FIELDS, couriers as courierList } from '../data/couriers';
+import { applyDeliveryConfig } from '../data/delivery';
+import { pickupPoints } from '../data/pickupPoints';
 import { seedShops } from '../data/shops';
 import { normalizePhone } from '../utils/format';
 
@@ -40,6 +43,7 @@ export function __reset() {
     vouchers: [],
   };
   token = null;
+  applyDeliveryConfig({}); // back to the starting courier rates and example points
 }
 __reset();
 
@@ -1415,5 +1419,33 @@ Object.assign(admin, {
     shipment.status = status;
     note(order.buyerId, 'order', status === 'delivered' ? 'Delivered' : 'On its way', why, '/account');
     return copy(order);
+  },
+});
+
+// ---------- Delivery settings ----------
+const deliveryView = () => ({
+  couriers: Object.fromEntries(
+    courierList.map((c) => [c.id, { ...Object.fromEntries(EDITABLE_COURIER_FIELDS.map((k) => [k, c[k]])), confirmed: !!db.delivery?.couriers?.[c.id] }]),
+  ),
+  points: copy(pickupPoints),
+  pointsConfirmed: !!db.delivery?.points,
+});
+export const delivery = async () => deliveryView();
+Object.assign(admin, {
+  async delivery() {
+    staff();
+    return deliveryView();
+  },
+  async saveCourier(id, body) {
+    owner();
+    db.delivery = { ...(db.delivery ?? {}), couriers: { ...(db.delivery?.couriers ?? {}), [id]: body } };
+    applyDeliveryConfig(db.delivery);
+    return deliveryView();
+  },
+  async savePoints(points) {
+    owner();
+    db.delivery = { ...(db.delivery ?? {}), points };
+    applyDeliveryConfig(db.delivery);
+    return deliveryView();
   },
 });
