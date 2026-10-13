@@ -1,4 +1,4 @@
-// Sends a test SMS with the settings in server/.env, to check the Africa's Talking connection.
+// Sends a test SMS with the settings in server/.env, to check the SMS connection.
 //   npm run sms:test -- 0977123456
 import { normalizePhone } from '../src/utils/format.js';
 import { smsFromEnv } from '../server/sms.js';
@@ -10,7 +10,7 @@ if (!/^[79]\d{8}$/.test(phone)) {
 }
 const sms = smsFromEnv();
 if (sms.provider === 'console') {
-  console.log("No SMS provider set. Add AT_USERNAME and AT_API_KEY to server/.env (see server/.env.example).");
+  console.log("No SMS provider set. Add AT_USERNAME and AT_API_KEY, or SMS_GATEWAY_USER and SMS_GATEWAY_PASS, to server/.env (see server/.env.example).");
   process.exit(1);
 }
 try {

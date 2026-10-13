@@ -31,8 +31,8 @@ const docs = {
         <h2>1. Who sells to you</h2>
         <p>
           Products are sold by the shops listed on each product page, not by Zed Market. The shop is responsible for the
-          product, its description and its delivery. We run the platform, take payments on the shop's behalf and help
-          resolve problems.
+          product, its description and its delivery. We run the platform and help resolve problems. You pay the shop
+          directly; Zed Market does not hold your money.
         </p>
         <h2>2. Your account</h2>
         <p>
@@ -43,8 +43,9 @@ const docs = {
         <ul>
           <li>Prices are in Zambian Kwacha and are set by each shop. Delivery fees are shown before you pay.</li>
           <li>
-            When you pay by Mobile Money or card, we hold the payment and release it to the shop after delivery is
-            confirmed. Pay on Delivery is paid directly to the shop or its courier.
+            When you pay by Mobile Money, you send the money to the shop's Mobile Money number shown on your order,
+            and the shop sends your parcel once the money arrives. Pay on Delivery is paid directly to the shop or its
+            courier.
           </li>
           <li>Delivery times are estimates given by the shop and the courier.</li>
           <li>Discount codes and agreed wholesale prices can be used once and only before they expire.</li>
@@ -172,8 +173,8 @@ const docs = {
         </ol>
         <h2>Refunds</h2>
         <p>
-          Refunds for Mobile Money and card payments go back to the number or card you paid with. Pay on Delivery orders
-          are refunded to a Mobile Money number of your choice.
+          Refunds for Mobile Money payments go back to the number you paid with. Pay on Delivery orders are refunded
+          to a Mobile Money number of your choice.
         </p>
         <h2>Not covered</h2>
         <p>

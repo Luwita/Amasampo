@@ -19,7 +19,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 async function signIn(phone, extra = {}) {
@@ -41,7 +47,7 @@ const quote = (courier, shipping = lusaka, extra = {}) =>
   api(
     'POST',
     '/api/orders/quote',
-    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: courier }, payment: 'mtn', ...extra },
+    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: courier }, payment: 'momo', ...extra },
     buyer.token,
   );
 const platinum = {
@@ -80,7 +86,7 @@ before(async () => {
         province: 'lusaka',
         town: 'Lusaka',
         area: 'Cairo Road',
-        couriers: ['pickup', 'platinum', 'zampost'],
+        momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'platinum', 'zampost'],
       },
       seller.token,
     )
@@ -111,7 +117,7 @@ describe('delivery settings', () => {
     const placed = await api(
       'POST',
       '/api/orders',
-      { items: [{ productId: fanId, qty: 1 }], shipping: lusaka, couriers: { [seller.shopId]: 'platinum' }, payment: 'mtn' },
+      { items: [{ productId: fanId, qty: 1 }], shipping: lusaka, couriers: { [seller.shopId]: 'platinum' }, payment: 'momo' },
       buyer.token,
     );
     assert.equal(placed.body.delivery, 60);

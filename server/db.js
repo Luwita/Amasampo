@@ -4,6 +4,12 @@ import { fileURLToPath } from 'node:url';
 
 const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
 
+// Work to do only once a transaction has been saved (e.g. sending an SMS), so nothing goes out if it rolls back.
+function commitHooks() {
+  const hooks = [];
+  return [(fn) => hooks.push(fn), () => hooks.forEach((fn) => fn())];
+}
+
 // One small interface over two drivers:
 //   DATABASE_URL=postgres://...  -> a real Postgres server (production)
 //   otherwise                    -> PGlite, Postgres running in-process, stored in PGLITE_DIR (development)
@@ -18,10 +24,12 @@ export async function createDb({ url = process.env.DATABASE_URL, dataDir = proce
       exec: (sql) => pool.query(sql),
       async tx(fn) {
         const client = await pool.connect();
+        const [afterCommit, runAfterCommit] = commitHooks();
         try {
           await client.query('BEGIN');
-          const result = await fn({ query: async (text, params) => (await client.query(text, params)).rows });
+          const result = await fn({ query: async (text, params) => (await client.query(text, params)).rows, afterCommit });
           await client.query('COMMIT');
+          runAfterCommit();
           return result;
         } catch (err) {
           await client.query('ROLLBACK');
@@ -43,7 +51,14 @@ export async function createDb({ url = process.env.DATABASE_URL, dataDir = proce
     location: dataDir || null,
     query: async (text, params) => (await pglite.query(text, params)).rows,
     exec: (sql) => pglite.exec(sql),
-    tx: (fn) => pglite.transaction((t) => fn({ query: async (text, params) => (await t.query(text, params)).rows })),
+    async tx(fn) {
+      const [afterCommit, runAfterCommit] = commitHooks();
+      const result = await pglite.transaction((t) =>
+        fn({ query: async (text, params) => (await t.query(text, params)).rows, afterCommit }),
+      );
+      runAfterCommit();
+      return result;
+    },
     close: () => pglite.close(),
   };
 }

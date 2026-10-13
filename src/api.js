@@ -86,6 +86,10 @@ export const shopOrders = () => request('GET', '/orders/shop');
 export const updateShipment = (orderId, shopId, patch) =>
   request('PATCH', `/orders/${orderId}/shipments/${shopId}`, patch);
 export const quoteOrder = (order) => request('POST', '/orders/quote', order);
+// Mobile Money goes straight to the shop: the buyer says it was sent, the shop confirms it arrived.
+export const paymentSent = (orderId, shopId, reference) =>
+  request('POST', `/orders/${orderId}/shipments/${shopId}/payment-sent`, { reference: reference || undefined });
+export const confirmPayment = (orderId, shopId) => request('POST', `/orders/${orderId}/shipments/${shopId}/paid`, {});
 
 // ----- Messages -----
 export const listConversations = () => request('GET', '/conversations');
@@ -156,6 +160,10 @@ export const admin = {
   payouts: () => request('GET', '/admin/payouts'),
   payoutHistory: (shopId) => request('GET', `/admin/payouts/history?${qs({ shopId })}`),
   pay: (body) => request('POST', '/admin/payouts', body),
+  commissionAccount: () => request('GET', '/admin/commission-account'),
+  saveCommissionAccount: (body) => request('PUT', '/admin/commission-account', body),
+  receiveCommission: (body) => request('POST', '/admin/commission', body),
+  remindCommission: (shopId) => request('POST', '/admin/commission/remind', { shopId }),
   banners: () => request('GET', '/admin/banners'),
   createBanner: (body) => request('POST', '/admin/banners', body),
   updateBanner: (id, body) => request('PATCH', `/admin/banners/${id}`, body),

@@ -1,5 +1,6 @@
 import { seedProducts } from '../src/data/catalog.js';
 import { seedShops } from '../src/data/shops.js';
+import { normalizePhone } from '../src/utils/format.js';
 
 // Fills an empty database with the demo shops and products.
 export async function seedIfEmpty(db) {
@@ -10,9 +11,25 @@ export async function seedIfEmpty(db) {
     for (const s of seedShops) {
       await t.query(
         // Demo shops are created already approved, so the marketplace isn't empty.
-        `INSERT INTO shops (id, name, logo, province, town, area, phone, couriers, rating, since, verification)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'verified')`,
-        [s.id, s.name, s.logo, s.province, s.town, s.area, s.phone, JSON.stringify(s.couriers), s.rating, s.since],
+        `INSERT INTO shops (id, name, logo, province, town, area, phone, couriers, rating, since, verification,
+                            momo_network, momo_number, momo_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'verified', $11, $12, $13)`,
+        [
+          s.id,
+          s.name,
+          s.logo,
+          s.province,
+          s.town,
+          s.area,
+          s.phone,
+          JSON.stringify(s.couriers),
+          s.rating,
+          s.since,
+          // Demo shops take Mobile Money on their shop phone.
+          { 6: 'mtn', 7: 'airtel', 5: 'zamtel' }[normalizePhone(s.phone)[1]] ?? 'mtn',
+          normalizePhone(s.phone),
+          s.name,
+        ],
       );
     }
     for (const p of seedProducts) {

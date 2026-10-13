@@ -20,10 +20,12 @@ import { sellerRoutes } from './routes/seller.js';
 import { adminToolRoutes, bannerRoutes } from './routes/adminTools.js';
 import { adminControlRoutes } from './routes/adminControl.js';
 import { getSettings } from './settings.js';
+import { sendNotificationsBySms } from './notify.js';
 import { deliveryAdminRoutes, deliveryRoutes } from './routes/delivery.js';
 
 export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, adminPhones = [] } = {}) {
   const app = express();
+  sendNotificationsBySms(sms ?? null);
   app.disable('x-powered-by');
   app.use(express.json({ limit: '3mb' })); // room for one base64 photo
 
@@ -51,7 +53,7 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, a
   app.use('/api/banners', bannerRoutes(db));
   // Public: commission rate and voucher amounts, shown in the seller terms and on the invite page.
   app.get('/api/settings', async (_req, res) => res.json(await getSettings(db)));
-  app.use('/api/admin', adminRoutes(db, { adminPhones }));
+  app.use('/api/admin', adminRoutes(db, { adminPhones, sms }));
   app.use('/api/notifications', notificationRoutes(db));
   app.use('/api/support', supportRoutes(db));
   app.use('/api/buying-requests', buyingRequestRoutes(db));

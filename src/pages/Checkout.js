@@ -11,7 +11,6 @@ import { formatLocation } from '../data/zambia';
 import { formatK } from '../utils/format';
 import { groupByShop } from './Cart';
 
-const MOBILE_MONEY = ['mtn', 'airtel', 'zamtel'];
 const PHONE = /^(\+?260|0)?[79]\d{8}$/;
 
 export default function Checkout() {
@@ -23,8 +22,7 @@ export default function Checkout() {
     province: location.province,
     town: location.town,
     address: '',
-    payment: 'mtn',
-    momoNumber: '',
+    payment: 'momo',
   });
   const [picked, setPicked] = useState({}); // shopId -> courier id
   const [errors, setErrors] = useState({});
@@ -52,7 +50,6 @@ export default function Checkout() {
       ...f,
       name: f.name || (user.name === 'Zed Market Shopper' ? '' : user.name),
       phone: f.phone || user.phone,
-      momoNumber: f.momoNumber || user.phone,
     }));
   }, [user]);
 
@@ -150,6 +147,7 @@ export default function Checkout() {
   const total = subtotal - discount - voucherDiscount + delivery;
   const discountFor = (shopId) => coupon?.priced.shipments.find((s) => s.shopId === shopId)?.discount ?? 0;
   const codAllowed = shipments.every((s) => s.chosen?.courier.cod);
+  const noMomo = shipments.filter((s) => !s.shop.takesMomo).map((s) => s.shop.name);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   const applyCode = async () => {
@@ -171,8 +169,8 @@ export default function Checkout() {
     if (!form.name.trim()) errs.name = 'Enter your full name';
     if (!PHONE.test(form.phone.replace(/\s/g, ''))) errs.phone = 'Enter a valid Zambian number, e.g. 097 123 4567';
     if (!form.address.trim()) errs.address = 'Enter a street, plot number or landmark';
-    if (MOBILE_MONEY.includes(form.payment) && !PHONE.test(form.momoNumber.replace(/\s/g, '')))
-      errs.momoNumber = 'Enter the Mobile Money number to charge';
+    if (form.payment === 'momo' && noMomo.length)
+      errs.payment = `${noMomo.join(', ')} can't take Mobile Money yet. Choose Pay on Delivery, or remove its items.`;
     if (form.payment === 'cod' && !codAllowed)
       errs.payment = 'Pay on Delivery is not available with bus parcel or Zampost. Choose another courier or payment.';
     if (voucherId && voucherQuote.error) errs.voucher = voucherQuote.error;
@@ -306,16 +304,15 @@ export default function Checkout() {
               ))}
             </div>
             {errors.payment && <span className="error">{errors.payment}</span>}
-            {MOBILE_MONEY.includes(form.payment) &&
-              field('momoNumber', 'Mobile Money number', { type: 'tel', placeholder: '096 123 4567' })}
-            {form.payment === 'card' && (
-              <p className="muted small">
-                You'll be redirected to a secure 3-D Secure page to enter your card details.
+            {form.payment === 'momo' ? (
+              <p className="escrow-note">
+                📲 After you place the order we show you {shipments.length > 1 ? "each shop's" : "the shop's"} Mobile
+                Money number and text it to you. Send the money, tap "I've paid", and the shop sends your parcel once
+                the money arrives.{shipments.length > 1 && ' You pay each shop separately.'}
               </p>
+            ) : (
+              <p className="escrow-note">💵 Pay the shop or its courier when you receive your parcel.</p>
             )}
-            <p className="escrow-note">
-              🔒 Your payment is held safely by Zed Market and released to the shop only after you confirm delivery.
-            </p>
           </section>
         </div>
 
@@ -424,13 +421,7 @@ export default function Checkout() {
           </div>
           {errors.submit && <p className="error">{errors.submit}</p>}
           <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={processing}>
-            {processing
-              ? MOBILE_MONEY.includes(form.payment)
-                ? 'Approve the prompt on your phone…'
-                : 'Processing…'
-              : form.payment === 'cod'
-                ? 'Place order'
-                : `Pay ${formatK(total)}`}
+            {processing ? 'Placing your order…' : `Place order · ${formatK(total)}`}
           </button>
           <p className="muted small center">
             By placing your order you agree to our <Link to="/legal/terms">terms</Link> and{' '}

@@ -1,4 +1,5 @@
 import { Link, useLocation, useParams } from 'react-router-dom';
+import PayShop, { paymentLabel } from '../components/PayShop';
 import ShipmentStatus from '../components/ShipmentStatus';
 import { useStore } from '../context/StoreContext';
 import { formatLocation } from '../data/zambia';
@@ -21,13 +22,14 @@ export default function OrderSuccess() {
     );
   }
 
+  const toPay = order.payByMomo && !order.paid;
   return (
     <div className="container section narrow">
       <div className="card success">
         <div className="success-icon">✓</div>
-        <h1>Natotela! Your order is confirmed</h1>
+        <h1>{toPay ? 'Natotela! One more step: pay the shop' : 'Natotela! Your order is confirmed'}</h1>
         <p className="muted">
-          Order <strong>{order.id}</strong> · {order.payment} · {order.paid ? 'Paid' : 'Pay on delivery'}
+          Order <strong>{order.id}</strong> · {order.payment} · {paymentLabel(order)}
         </p>
         <p>
           Delivering to{' '}
@@ -41,12 +43,13 @@ export default function OrderSuccess() {
           <div key={s.shopId} className="card shipment-card">
             <strong>{s.shopName}</strong>
             <span className="muted small"> · from {s.shopTown}</span>
+            <PayShop order={order} shipment={s} />
             <ShipmentStatus shipment={s} />
           </div>
         ))}
 
         <div className="summary-row total">
-          <span>{order.paid ? 'Total paid' : 'Total due on delivery'}</span>
+          <span>{order.paid ? 'Total paid' : order.payByMomo ? 'Total to pay by Mobile Money' : 'Total due on delivery'}</span>
           <span>{formatK(order.total)}</span>
         </div>
 

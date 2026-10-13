@@ -209,8 +209,9 @@ function PointsEditor({ saved, confirmed, isOwner, onSaved }) {
         )}
       </div>
       <p className="muted small">
-        Collection points where buyers pick up parcels. Until you save your own list, buyers see example points that are
-        not real places. Saving replaces them. Closed points are kept but not offered.
+        Collection points where buyers pick up parcels. The example points are only shown while testing on this
+        computer; on the live site buyers are offered no points until you save your own list. Closed points are kept
+        but not offered.
       </p>
       {points.length > 0 ? (
         <ul className="admin-log">

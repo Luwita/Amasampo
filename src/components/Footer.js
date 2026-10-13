@@ -22,7 +22,7 @@ export default function Footer() {
             <span>MTN MoMo</span>
             <span>Airtel Money</span>
             <span>Zamtel Kwacha</span>
-            <span>Visa</span>
+            <span>Pay on Delivery</span>
           </div>
         </div>
         <div>

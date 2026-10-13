@@ -4,7 +4,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireUser } from '../auth.js';
 import { HttpError, newId, parse } from '../http.js';
-import { toProduct, toShop } from '../mappers.js';
+import { normalizePhone } from '../../src/utils/format.js';
+import { toOwnShop, toProduct, toShop } from '../mappers.js';
 import { LIVE_SHOP, insertProduct, isLive, myShopOrFail, searchProducts, updateProduct } from '../queries.js';
 import { productSchema, searchSchema, shopSchema, verificationSchema } from '../schemas.js';
 
@@ -16,7 +17,7 @@ export async function saveShop(q, shop, s) {
   const [row] = await q.query(
     `UPDATE shops SET name = $2, logo = $3, category = $4, province = $5, town = $6, area = $7, phone = $8,
             couriers = $9, own_rates = $10, tpin = $11, vat_registered = $12,
-             banner = $13, about = $14, opening_hours = $15
+             banner = $13, about = $14, opening_hours = $15, momo_network = $16, momo_number = $17, momo_name = $18
       WHERE id = $1 RETURNING *`,
     [
       shop.id,
@@ -34,6 +35,9 @@ export async function saveShop(q, shop, s) {
       s.banner || null,
       s.about || null,
       s.openingHours || null,
+      s.momoNetwork,
+      normalizePhone(s.momoNumber),
+      s.momoName,
     ],
   );
   return row;
@@ -51,14 +55,15 @@ export function catalogRoutes(db, { uploadDir }) {
          FROM shops sh WHERE ${LIVE_SHOP} OR sh.owner_id = $1 ORDER BY sh.created_at, sh.id`,
       [req.user?.id ?? null],
     );
-    res.json(rows.map(toShop));
+    // Only the owner sees the shop's Mobile Money number here; buyers get it on their own orders.
+    res.json(rows.map((r) => (r.owner_id && r.owner_id === req.user?.id ? toOwnShop(r) : toShop(r))));
   });
 
   router.get('/shops/:id', async (req, res) => {
     const [shop] = await db.query('SELECT * FROM shops WHERE id = $1', [req.params.id]);
     const allowed = shop && (isLive(shop) || shop.owner_id === req.user?.id || req.user?.isAdmin);
     if (!allowed) throw new HttpError(404, 'Shop not found');
-    res.json(toShop(shop));
+    res.json(shop.owner_id === req.user?.id || req.user?.isAdmin ? toOwnShop(shop) : toShop(shop));
   });
 
   // Search, filter, sort and page the catalogue. Returns { items, total, page, pageSize }.
@@ -101,8 +106,10 @@ export function catalogRoutes(db, { uploadDir }) {
       ]);
       return t.query(
         `INSERT INTO shops (id, owner_id, name, logo, category, province, town, area, phone, couriers, own_rates, since,
-                            tpin, vat_registered, owner_full_name, nrc, pacra, verification)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'pending') RETURNING *`,
+                            tpin, vat_registered, owner_full_name, nrc, pacra, momo_network, momo_number, momo_name,
+                            verification)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'pending')
+         RETURNING *`,
         [
           newId('shop'),
           req.user.id,
@@ -121,17 +128,20 @@ export function catalogRoutes(db, { uploadDir }) {
           owner.ownerFullName,
           owner.nrc,
           owner.pacra || null,
+          s.momoNetwork,
+          normalizePhone(s.momoNumber),
+          s.momoName,
         ],
       );
     });
-    res.status(201).json(toShop(row));
+    res.status(201).json(toOwnShop(row));
   });
 
   router.patch('/shops/:id', requireUser, async (req, res) => {
     const shop = await myShopOrFail(db, req.user);
     if (shop.id !== req.params.id) throw new HttpError(403, 'You can only edit your own shop');
     const row = await saveShop(db, shop, parse(shopSchema, req.body));
-    res.json(toShop(row));
+    res.json(toOwnShop(row));
   });
 
   router.post('/products', requireUser, async (req, res) => {

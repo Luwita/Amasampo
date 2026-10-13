@@ -26,7 +26,7 @@ const CANCEL_REASONS = {
 const date = (d) => new Date(d).toLocaleDateString('en-ZM', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // Cancel a parcel that hasn't been sent. `role` is 'buyer' or 'seller'.
-export function CancelParcel({ orderId, shopId, role, paid }) {
+export function CancelParcel({ orderId, shopId, role, paid, sent }) {
   const { reloadOrders, notify } = useStore();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(CANCEL_REASONS[role][0]);
@@ -62,7 +62,9 @@ export function CancelParcel({ orderId, shopId, role, paid }) {
         {role === 'buyer'
           ? paid
             ? 'Your payment for this parcel will be refunded.'
-            : 'Nothing has been paid for this parcel.'
+            : sent
+              ? "The shop hasn't confirmed your payment. If your money reached them, ask the shop to send it back, or contact Zed Market support."
+              : 'Nothing has been paid for this parcel.'
           : 'The stock goes back on sale and the buyer is refunded if they paid.'}
       </p>
       <div className="pdp-buttons">

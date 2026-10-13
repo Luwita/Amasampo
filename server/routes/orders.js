@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { momoNetworkName } from '../../src/data/catalog.js';
 import { OrderError, priceOrder } from '../../src/data/pricing.js';
 import { requireUser } from '../auth.js';
 import { HttpError, newId, newOrderId, parse } from '../http.js';
@@ -11,13 +12,8 @@ import { notify, notifyBuyerOfOrder, notifyShopOwner } from '../notify.js';
 import { cancelShipment, isLive, loadOrders, myShopOrFail } from '../queries.js';
 import { orderQuoteSchema, orderSchema } from '../schemas.js';
 
-const PAYMENT_NAMES = {
-  mtn: 'MTN Mobile Money',
-  airtel: 'Airtel Money',
-  zamtel: 'Zamtel Kwacha',
-  card: 'Visa / Mastercard',
-  cod: 'Pay on Delivery',
-};
+const PAYMENT_NAMES = { momo: 'Mobile Money', cod: 'Pay on Delivery' };
+const reference = z.string().trim().max(40).optional();
 
 const SHIPMENT_FLOW = { pending: 'dispatched', dispatched: 'delivered' };
 
@@ -147,8 +143,17 @@ export function orderRoutes(db) {
       const { priced, couponRows, voucherRow } = await priceForBuyer(t, req.user, body, true);
 
       const id = newOrderId();
-      // Mobile Money and card payments are not connected yet, so they are recorded as paid.
-      const paymentStatus = body.payment === 'cod' ? 'cod_due' : 'paid';
+      // No payment provider is connected yet: Mobile Money goes straight to each shop's number, and the shop
+      // confirms it arrived before sending the parcel.
+      const byMomo = body.payment === 'momo';
+      const paymentStatus = byMomo ? 'momo_direct' : 'cod_due';
+      const momoOf = Object.fromEntries(
+        (
+          await t.query('SELECT id, momo_network, momo_number, momo_name FROM shops WHERE id = ANY($1)', [
+            priced.shipments.map((s) => s.shopId),
+          ])
+        ).map((r) => [r.id, r]),
+      );
       const [row] = await t.query(
         `INSERT INTO orders (id, buyer_id, buyer_name, buyer_phone, province, town, address, payment_method,
                              payment_status, subtotal, discount, delivery, total, voucher_id, voucher_discount)
@@ -196,12 +201,26 @@ export function orderRoutes(db) {
           ],
         );
         const units = s.items.reduce((n, i) => n + i.qty, 0);
+        const due = formatK(s.subtotal - s.discount - s.voucherDiscount + s.fee);
         await notifyShopOwner(t, s.shopId, {
           kind: 'order',
           title: `New order ${id}`,
-          body: `${units} item${units > 1 ? 's' : ''} worth ${formatK(s.subtotal - s.discount)} for ${body.shipping.town}. Please send it soon.`,
+          body: `${units} item${units > 1 ? 's' : ''} worth ${formatK(s.subtotal - s.discount)} for ${body.shipping.town}. ${
+            byMomo
+              ? `Wait for ${due} on your Mobile Money, confirm it in My shop, then send the parcel.`
+              : 'Please send it soon.'
+          }`,
           link: '/seller?tab=orders',
         });
+        if (byMomo) {
+          const momo = momoOf[s.shopId];
+          await notify(t, req.user.id, {
+            kind: 'payment',
+            title: `Pay ${due} to ${momoNetworkName(momo.momo_network)} 0${momo.momo_number}`,
+            body: `Name: ${momo.momo_name}. For order ${id} from ${s.shopName}. Then tap "I've paid" in My orders.`,
+            link: '/account',
+          });
+        }
         for (const item of s.items) {
           await t.query(
             `INSERT INTO order_items (id, shipment_id, product_id, name, options, qty, unit_price, price_request_id)
@@ -237,6 +256,53 @@ export function orderRoutes(db) {
     res.json({ order: full, refund: result.refund });
   });
 
+  // The buyer says they have sent the Mobile Money for a parcel, with their transaction ID if they have it.
+  router.post('/:orderId/shipments/:shopId/payment-sent', async (req, res) => {
+    const body = parse(z.object({ reference }), req.body ?? {});
+    const [order] = await db.query('SELECT * FROM orders WHERE id = $1 AND buyer_id = $2', [
+      req.params.orderId,
+      req.user.id,
+    ]);
+    if (!order) throw new HttpError(404, 'Order not found');
+    await db.tx(async (t) => {
+      const s = await unpaidMomoParcel(t, order, req.params.shopId);
+      await t.query('UPDATE shipments SET payment_sent_at = now(), payment_ref = $2, updated_at = now() WHERE id = $1', [
+        s.id,
+        body.reference || null,
+      ]);
+      await notifyShopOwner(t, s.shop_id, {
+        kind: 'payment',
+        title: `Payment sent for order ${order.id}`,
+        body: `${order.buyer_name} says they sent ${formatK(amountDue(s))} to your Mobile Money${
+          body.reference ? ` (ID ${body.reference})` : ''
+        }. Check it has arrived, then confirm it in My shop.`,
+        link: '/seller?tab=orders',
+      });
+    });
+    const [full] = await loadOrders(db, [order]);
+    res.json(full);
+  });
+
+  // The shop confirms the buyer's Mobile Money has arrived. Only then can the parcel be sent.
+  router.post('/:orderId/shipments/:shopId/paid', async (req, res) => {
+    const shop = await myShopOrFail(db, req.user);
+    if (shop.id !== req.params.shopId) throw new HttpError(403, 'You can only update your own parcels');
+    const [order] = await db.query('SELECT * FROM orders WHERE id = $1', [req.params.orderId]);
+    if (!order) throw new HttpError(404, 'Order not found');
+    await db.tx(async (t) => {
+      const s = await unpaidMomoParcel(t, order, shop.id);
+      await t.query('UPDATE shipments SET paid_at = now(), updated_at = now() WHERE id = $1', [s.id]);
+      await notify(t, order.buyer_id, {
+        kind: 'payment',
+        title: `${shop.name} received your payment`,
+        body: `${formatK(amountDue(s))} for order ${order.id}. Your parcel is being prepared.`,
+        link: '/account',
+      });
+    });
+    const [full] = await loadOrders(db, [order], shop.id);
+    res.json(full);
+  });
+
   router.get('/mine', async (req, res) => {
     const rows = await db.query('SELECT * FROM orders WHERE buyer_id = $1 ORDER BY created_at DESC', [req.user.id]);
     res.json(await loadOrders(db, rows));
@@ -265,6 +331,21 @@ export function orderRoutes(db) {
   return router;
 }
 
+const amountDue = (s) => Number(s.subtotal) - Number(s.discount) - Number(s.voucher_discount) + Number(s.fee);
+
+// A parcel still waiting for its Mobile Money payment, locked for the current transaction.
+async function unpaidMomoParcel(t, order, shopId) {
+  const [s] = await t.query('SELECT * FROM shipments WHERE order_id = $1 AND shop_id = $2 FOR UPDATE', [
+    order.id,
+    shopId,
+  ]);
+  if (!s) throw new HttpError(404, 'Order not found');
+  if (order.payment_status !== 'momo_direct') throw new HttpError(409, "This order isn't paid by Mobile Money");
+  if (s.status === 'cancelled') throw new HttpError(409, 'This parcel was cancelled');
+  if (s.paid_at) throw new HttpError(409, 'This payment has already been confirmed');
+  return s;
+}
+
 export const shipmentUpdateSchema = z.object({
   status: z.enum(['dispatched', 'delivered']),
   tracking: z.string().trim().max(60).optional(),
@@ -272,13 +353,17 @@ export const shipmentUpdateSchema = z.object({
 
 // Moves a parcel to its next status and tells the buyer. Used by the shop, and by staff on the shop's behalf.
 export async function advanceShipment(db, orderId, shop, body) {
-  const [current] = await db.query('SELECT status FROM shipments WHERE order_id = $1 AND shop_id = $2', [
-    orderId,
-    shop.id,
-  ]);
+  const [current] = await db.query(
+    `SELECT s.status, s.paid_at, o.payment_status FROM shipments s JOIN orders o ON o.id = s.order_id
+      WHERE s.order_id = $1 AND s.shop_id = $2`,
+    [orderId, shop.id],
+  );
   if (!current) throw new HttpError(404, 'Order not found');
   if (SHIPMENT_FLOW[current.status] !== body.status) {
     throw new HttpError(409, `A ${current.status} parcel can't be marked ${body.status}`);
+  }
+  if (current.payment_status === 'momo_direct' && !current.paid_at) {
+    throw new HttpError(409, "Confirm the buyer's Mobile Money payment before sending this parcel");
   }
   await db.tx(async (t) => {
     const [s] = await t.query(

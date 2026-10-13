@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as api from '../api';
 import { useStore } from '../context/StoreContext';
@@ -127,8 +127,9 @@ export function Analytics() {
 
 // ---------------------------------------------------------------- Payouts
 
-function PayForm({ shop, onPaid }) {
-  const [form, setForm] = useState({ amount: String(shop.available), method: 'mtn', reference: '', note: '' });
+// Records money moving between Zed Market and a shop: a payout to the shop, or commission received from it.
+function PayForm({ shop, onPaid, amount = shop.available, label = 'Record payout' }) {
+  const [form, setForm] = useState({ amount: String(amount), method: 'mtn', reference: '', note: '' });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   return (
     <form
@@ -148,8 +149,56 @@ function PayForm({ shop, onPaid }) {
       </select>
       <input value={form.reference} onChange={set('reference')} placeholder="Transaction reference" aria-label="Reference" />
       <button className="btn btn-primary btn-sm" disabled={form.reference.trim().length < 3}>
-        Record payout
+        {label}
       </button>
+    </form>
+  );
+}
+
+// Where shops send the commission they owe. Owners set it; shops see it next to the amount they owe.
+function CommissionAccount() {
+  const { user } = useStore();
+  const { items, run } = useAdminList(() => api.admin.commissionAccount().then((a) => a ?? {}), {});
+  const [form, setForm] = useState(null);
+  useEffect(() => {
+    if (items) setForm({ network: items.network ?? 'mtn', number: items.number ?? '', name: items.name ?? '' });
+  }, [items]);
+  if (!form) return null;
+  const isOwner = user?.staffRole === 'owner';
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  return (
+    <form
+      className="card form-card"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await run(() => api.admin.saveCommissionAccount(form), 'Saved. Shops now see where to pay.');
+      }}
+    >
+      <h3>Where shops pay their commission</h3>
+      {!items.number && (
+        <p className="review-note">Not set yet: shops can see what they owe, but not where to send it.</p>
+      )}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="ca-network">Network or bank</label>
+          <select id="ca-network" value={form.network} onChange={set('network')} disabled={!isOwner}>
+            {Object.entries(PAYOUT_METHODS).map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="ca-number">Number or account</label>
+          <input id="ca-number" value={form.number} onChange={set('number')} disabled={!isOwner} placeholder="097 123 4567" />
+        </div>
+        <div className="field">
+          <label htmlFor="ca-name">Registered name</label>
+          <input id="ca-name" value={form.name} onChange={set('name')} disabled={!isOwner} placeholder="e.g. Zed Market Ltd" />
+        </div>
+      </div>
+      {isOwner ? <button className="btn btn-primary btn-sm">Save</button> : <p className="muted small">Only owners can change this.</p>}
     </form>
   );
 }
@@ -157,11 +206,13 @@ function PayForm({ shop, onPaid }) {
 export function Payouts() {
   const { items, run } = useAdminList(() => api.admin.payouts(), {});
   const [paying, setPaying] = useState(null);
+  const [collecting, setCollecting] = useState(null);
   const [historyKey, setHistoryKey] = useState(0);
   const { items: history } = useAdminList(() => api.admin.payoutHistory(), { historyKey });
   if (!items) return <p className="muted">Loading…</p>;
   const owed = items.reduce((n, s) => n + Math.max(0, s.available), 0);
   const held = items.reduce((n, s) => n + s.onHold, 0);
+  const toCollect = items.reduce((n, s) => n + (s.owed ?? 0), 0);
 
   return (
     <>
@@ -176,11 +227,19 @@ export function Payouts() {
           <strong>{formatK(held)}</strong>
           <small>delivered in the last 7 days or disputed</small>
         </div>
+        <div className="tile">
+          <span>Commission to collect</span>
+          <strong>{formatK(toCollect)}</strong>
+          <small>owed to Zed Market by shops</small>
+        </div>
       </div>
       <p className="muted small">
-        Online payments: the shop gets goods + delivery − commission. Cash on delivery: the shop already has the cash,
-        so it owes the commission (shown as a negative balance) and gets back any Zed Market voucher.
+        Buyers pay shops directly, by Mobile Money or on delivery, so the shop already has the money: it owes the
+        commission (shown as a negative balance) and gets back any Zed Market voucher its buyers used. When a shop
+        sends its commission, record it here; "Remind" sends the shop the amount and where to pay, in the app and by
+        text.
       </p>
+      <CommissionAccount />
       {items.length ? (
         <div className="table-wrap">
           <table className="table">
@@ -223,11 +282,35 @@ export function Payouts() {
                           }
                         }}
                       />
+                    ) : collecting === s.shopId ? (
+                      <PayForm
+                        shop={s}
+                        amount={s.owed}
+                        label="Record commission"
+                        onPaid={async (body) => {
+                          if (await run(() => api.admin.receiveCommission(body), `Commission from ${s.shopName} recorded`)) {
+                            setCollecting(null);
+                            setHistoryKey((k) => k + 1);
+                          }
+                        }}
+                      />
+                    ) : s.available > 0 ? (
+                      <button className="btn btn-primary btn-sm" onClick={() => setPaying(s.shopId)}>
+                        Pay {formatK(s.available)}
+                      </button>
                     ) : (
-                      s.available > 0 && (
-                        <button className="btn btn-primary btn-sm" onClick={() => setPaying(s.shopId)}>
-                          Pay {formatK(s.available)}
-                        </button>
+                      s.owed > 0 && (
+                        <span className="pdp-buttons">
+                          <button className="btn btn-primary btn-sm" onClick={() => setCollecting(s.shopId)}>
+                            Commission received
+                          </button>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => run(() => api.admin.remindCommission(s.shopId), `${s.shopName} has been reminded`)}
+                          >
+                            Remind
+                          </button>
+                        </span>
                       )
                     )}
                   </td>
@@ -240,18 +323,20 @@ export function Payouts() {
         <p className="muted">No delivered orders yet.</p>
       )}
 
-      <h3>Payout history</h3>
+      <h3>Payment history</h3>
       {history?.length ? (
         <ul className="admin-log">
           {history.map((p) => (
             <li key={p.id}>
-              <strong>{formatK(p.amount)}</strong> to {p.shopName} · {PAYOUT_METHODS[p.method]} {p.reference}
+              <strong>{formatK(p.amount)}</strong>{' '}
+              {p.kind === 'commission' ? `commission from ${p.shopName}` : `to ${p.shopName}`} ·{' '}
+              {PAYOUT_METHODS[p.method]} {p.reference}
               <span className="muted small"> · {date(p.date)}</span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="muted">No payouts yet.</p>
+        <p className="muted">No payments yet.</p>
       )}
     </>
   );

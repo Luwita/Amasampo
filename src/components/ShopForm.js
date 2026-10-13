@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { compressImage } from '../utils/image';
-import { categories } from '../data/catalog';
+import { categories, momoNetworks } from '../data/catalog';
 import { shopCouriers as couriers } from '../data/couriers';
 import { DEFAULT_LOCATION } from '../data/zambia';
 import LocationFields from './LocationFields';
@@ -20,6 +20,9 @@ const empty = {
   area: '',
   couriers: ['pickup', 'seller', 'yango', 'platinum'],
   ownRates: { town: 30, province: 90 },
+  momoNetwork: '',
+  momoNumber: '',
+  momoName: '',
 };
 
 // Shop details form used for registration and for editing settings later.
@@ -35,6 +38,9 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
     banner: initial?.banner ?? '',
     about: initial?.about ?? '',
     openingHours: initial?.openingHours ?? '',
+    momoNetwork: initial?.momoNetwork ?? '',
+    momoNumber: initial?.momoNumber ?? '',
+    momoName: initial?.momoName ?? '',
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -54,6 +60,9 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
     if (!PHONE.test(form.phone.replace(/\s/g, ''))) errs.phone = 'Enter a valid Zambian number';
     if (!form.area.trim()) errs.area = 'Enter your street, market or area';
     if (form.tpin && !/^\d{10}$/.test(form.tpin.trim())) errs.tpin = 'A TPIN has 10 digits';
+    if (!form.momoNetwork) errs.momoNetwork = 'Choose the network';
+    if (!PHONE.test(form.momoNumber.replace(/\s/g, ''))) errs.momoNumber = 'Enter your Mobile Money number';
+    if (form.momoName.trim().length < 3) errs.momoName = 'Enter the name the number is registered in';
     if (!form.couriers.some((c) => c !== 'pickup')) errs.couriers = 'Choose at least one delivery option';
     setErrors(errs);
     if (Object.keys(errs).length) return;
@@ -128,6 +137,34 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
         />
       </div>
       {input('area', 'Street, market or area', { placeholder: 'e.g. Shop 14, Kamwala Market' })}
+
+      <h3>Getting paid</h3>
+      <p className="muted small">
+        Buyers who pay by Mobile Money send the money straight to this number, and you confirm it has arrived before
+        you send the parcel. Buyers only see the number after they order from you. Give the name the number is
+        registered in, so they can check it before they send.
+      </p>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="shop-momoNetwork">Mobile Money network</label>
+          <select
+            id="shop-momoNetwork"
+            value={form.momoNetwork}
+            onChange={set('momoNetwork')}
+            className={errors.momoNetwork ? 'invalid' : ''}
+          >
+            <option value="">Choose…</option>
+            {momoNetworks.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}
+              </option>
+            ))}
+          </select>
+          {errors.momoNetwork && <span className="error">{errors.momoNetwork}</span>}
+        </div>
+        {input('momoNumber', 'Mobile Money number', { type: 'tel', placeholder: '097 123 4567' })}
+        {input('momoName', 'Name the number is registered in', { placeholder: 'e.g. Mwansa Banda' })}
+      </div>
 
       <h3>Your shop page</h3>
       <p className="muted small">Make your page look like your shop. Buyers see this when they open your shop.</p>

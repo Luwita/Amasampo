@@ -1,6 +1,6 @@
 // Zed Market Points: collection points where buyers pick up parcels sent by any shop.
-// These are starting EXAMPLES only. Staff enter the real partner outlets in Admin → Delivery; the saved list
-// replaces this one through applyPointConfig().
+// These are EXAMPLES for development only, and are never offered on the live site. Staff enter the real partner
+// outlets in Admin → Delivery; the saved list replaces this one through applyPointConfig().
 const EXAMPLE_POINTS = [
   { id: 'lsk-cairo', province: 'lusaka', town: 'Lusaka', name: 'Zed Market Point Cairo Road', address: 'Cairo Road, town centre', hours: 'Mon–Sat 08:00–18:00' },
   { id: 'lsk-east', province: 'lusaka', town: 'Lusaka', name: 'Zed Market Point Great East Road', address: 'Great East Road', hours: 'Mon–Sat 08:00–18:00' },
@@ -21,9 +21,11 @@ const EXAMPLE_POINTS = [
 
 export const pickupPoints = [];
 
-// Uses the saved list of points, or the examples while nothing has been saved. Updated in place for every import.
+// Uses the saved list of points. While nothing has been saved, development shows the examples and the live
+// site offers no points at all, so no buyer is sent to a place that doesn't exist. Updated in place for every import.
+const LIVE = typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
 export function applyPointConfig(saved = null) {
-  const list = saved ?? EXAMPLE_POINTS.map((p) => ({ ...p, example: true }));
+  const list = saved ?? (LIVE ? [] : EXAMPLE_POINTS.map((p) => ({ ...p, example: true })));
   pickupPoints.splice(0, pickupPoints.length, ...list.map((p) => ({ active: true, ...p })));
 }
 applyPointConfig();

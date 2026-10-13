@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { normalizePhone } from '../../src/utils/format.js';
 import { requireAdmin, requireOwner } from '../auth.js';
 import { HttpError, newId, parse } from '../http.js';
-import { toShop } from '../mappers.js';
+import { toOwnShop } from '../mappers.js';
 import { notify, notifyShopOwner } from '../notify.js';
 import { loadOrders, logAdmin, updateProduct } from '../queries.js';
 import { productSchema, shopSchema } from '../schemas.js';
@@ -135,7 +135,7 @@ export function adminControlRoutes(db, { adminPhones = [] } = {}) {
   router.get('/shops/:id', async (req, res) => {
     const [row] = await db.query('SELECT * FROM shops WHERE id = $1', [req.params.id]);
     if (!row) throw new HttpError(404, 'Shop not found');
-    res.json(toShop(row));
+    res.json(toOwnShop(row));
   });
 
   router.put('/shops/:id', async (req, res) => {
@@ -154,7 +154,7 @@ export function adminControlRoutes(db, { adminPhones = [] } = {}) {
       });
       return saved;
     });
-    res.json(toShop(row));
+    res.json(toOwnShop(row));
   });
 
   router.put('/products/:id', async (req, res) => {

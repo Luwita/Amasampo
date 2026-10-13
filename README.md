@@ -20,8 +20,8 @@ To remove every shop, product and order (keeping user accounts, staff and settin
 `npm run reset:catalog -- --yes`. A backup of the local database is saved in `server/.data/` first. Delete
 `server/.data/` to start over completely.
 
-Signing in uses a 6-digit code. Until an SMS provider is connected, the code is printed in the API terminal and
-shown on the sign-in screen (development only).
+Signing in uses a 6-digit code sent by SMS. While no SMS provider is connected, the code is printed in the API
+terminal and shown on the sign-in screen (development only); once one is connected it is only sent by SMS.
 
 ```bash
 npm test             # React tests (use an in-memory fake API)
@@ -69,6 +69,8 @@ React app (src/)  ──/api──▶  Express API (server/)  ──SQL──▶
 | GET | `/api/orders/shop` | parcels for the owner's shop |
 | PATCH | `/api/orders/:id/shipments/:shopId` | shop owner: pending → dispatched → delivered |
 | POST | `/api/orders/quote` | signed in: exact totals for checkout (codes, agreed prices) without ordering |
+| POST | `/api/orders/:id/shipments/:shopId/payment-sent` | buyer: "I've paid" by Mobile Money, with an optional transaction ID |
+| POST | `/api/orders/:id/shipments/:shopId/paid` | shop owner: the Mobile Money arrived; the parcel can now be sent |
 | GET/POST | `/api/conversations`, `/api/conversations/:id[/messages]`, `/api/conversations/unread` | buyer or shop in the conversation |
 | GET/POST/PATCH | `/api/seller/coupons[/:id]` | shop owner: discount codes |
 | POST/DELETE | `/api/products/:id/feature` | shop owner: feature on the home page (3 at a time, 7 days) |
@@ -121,6 +123,31 @@ For the App Store and Google Play, set `EXPO_PUBLIC_WEB_URL` to the hosted `http
 (see [mobile/.env.example](mobile/.env.example)) and build in Expo's cloud with `npx eas-cli@latest build`; no Mac
 is needed for the build, but the App Store needs an Apple Developer account.
 
+## Payments
+
+There is no payment provider yet, so Zed Market never holds a buyer's money. Buyers choose one of two ways to pay:
+
+- **Mobile Money, straight to the shop.** Every shop gives a Mobile Money number (network, number and the name it
+  is registered in) when it opens; a shop can't be saved without one. After ordering, the buyer is shown and texted
+  that number with the amount for each shop, sends the money, and taps **I've paid** (with the transaction ID if
+  they have it). The shop checks its Mobile Money, taps **Payment received** in My shop → Orders, and only then can
+  it mark the parcel as sent. An order from several shops is paid shop by shop.
+- **Pay on Delivery**, with the couriers that allow it.
+
+A shop's Mobile Money number is shown only to its owner, to staff, and to buyers on their own orders. Shops opened
+before this was added see a reminder to add their number; until they do, buyers can only pay them on delivery.
+
+Because shops collect the money themselves, the Payouts tab shows what each shop **owes** Zed Market (the
+commission, as a negative balance) minus any Zed Market voucher its buyers used. Commission becomes due 7 days
+after delivery, once the return window has passed. Owners save the Mobile Money number or bank account shops pay
+it to (Admin → Payouts); each shop sees the amount and that number under My shop → Sales report. When the money
+arrives, staff choose **Commission received** and enter the reference (never more than the shop owes), and
+**Remind** sends the shop the amount and where to pay, in the app and by text. A shop that doesn't pay can be
+suspended from the Shops tab. If a parcel is cancelled after the
+shop confirmed the payment, a refund is recorded, the shop is told to send the money back, and staff mark the refund
+as paid once it has. When a payment provider is added later, orders it collects use the `paid` status and are paid
+out to shops as before.
+
 ## Selling tools
 
 - **Messages:** buyers ask a shop about a product; both sides see unread counts. Messages poll every few seconds;
@@ -137,13 +164,13 @@ is needed for the build, but the App Store needs an Apple Developer account.
 ## Cancellations, returns and disputes
 
 - Buyers (or the shop) can cancel a parcel until it is sent. Stock, the discount-code use and any agreed wholesale
-  price are given back, and a refund is recorded if the buyer paid.
+  price are given back, and a refund is recorded if the shop had confirmed the buyer's payment.
 - Within 7 days of delivery the buyer can report a problem with items (with photos), or a parcel that never arrived
   once it has been sent. The shop accepts (refund, replacement or repair) or rejects with a reason.
 - If the shop rejects, or doesn't answer within 3 days, the buyer can escalate to Zed Market staff, who decide.
-- Refunds are recorded as "due". Until payouts are automated, staff pay them by Mobile Money or bank and record the
-  reference. Return refunds are deducted on the shop's monthly statement, with the commission on those goods given
-  back.
+- Refunds are recorded as "due". The shop has the buyer's money, so staff ask the shop to send it back (or pay it
+  and recover it from the shop) and record the reference. Return refunds are deducted on the shop's monthly
+  statement, with the commission on those goods given back.
 
 ## Admin panel
 
@@ -160,6 +187,9 @@ shop (a shop owner who joins the team needs a different phone number).
   a courier confirms by phone). Each needs a reason, which the shop is told and the log keeps.
 
 - **Overview** of what needs attention: disputes, refunds to pay, shops to verify, parcels not sent after 2 days.
+  A **Before you launch** list at the top shows what is still not set up (live SMS, commission rate, where shops
+  pay commission, courier rates, Zed Market Points, shops without a Mobile Money number) and disappears when
+  everything is done.
 - **Shops**: every new shop waits for approval before buyers can see it. Applicants give their full name, NRC
   number and optional PACRA number. Staff approve (the shop goes live with a ✓ badge) or reject with a note the owner
   sees; the owner can correct their details and resubmit. While waiting, owners can already add products. Staff can
@@ -170,8 +200,8 @@ shop (a shop owner who joins the team needs a different phone number).
 - **Disputes** and **Refunds** as described above.
 - **Analytics**: sales (GMV), commission earned, customers, new shops, vouchers and refunds for the last 7/30/90/365
   days, a sales-per-day chart, and breakdowns by province, shop, category, payment method and courier. Download as CSV.
-- **Payouts**: what Zed Market owes each shop. Online payments earn the shop goods + delivery − commission; for cash
-  on delivery the shop already holds the cash, so it owes the commission and gets back any Zed Market voucher. Money
+- **Payouts**: the balance between Zed Market and each shop. Buyers pay shops directly (Mobile Money or on
+  delivery), so the shop already holds the money: it owes the commission and gets back any Zed Market voucher. Money
   stays on hold for 7 days after delivery and while a return is open. Staff record each Mobile Money or bank payout
   with its reference (never more than is available); the shop is notified and sees its balance and history under
   Report in the seller dashboard.
@@ -198,7 +228,8 @@ collected (uploaded files are reachable by URL).
   are paid for by Zed Market (not the shop), need K300 of products, last 60 days, and come back if the whole order
   is cancelled. Owners change the amounts in Admin → Settings.
 - **Zed Market Points**: collection points where any shop can send a parcel for the buyer to collect. Owners add the
-  real partner outlets in Admin → Delivery; until then buyers see example points that are not real places.
+  real partner outlets in Admin → Delivery. Until then the live site offers no points; the example points only show
+  while developing on your own computer.
 - **Resell in my shop**: a shop owner can list another shop's product in their own shop with a 15% margin to
   start from. They buy it from the supplier (or use their own stock) and send it themselves.
 - **Shop pages**: cover photo, about text, opening hours, directions (Google Maps) and share buttons
@@ -237,6 +268,18 @@ Sign-in codes are sent by SMS through [Africa's Talking](https://africastalking.
 | `AT_API_KEY` | the sandbox API key | the live app's API key |
 | `AT_SENDER_ID` | leave out | your approved sender ID (optional) |
 
+**Testing with your own Android phone (free):** install [SMS Gateway for Android](https://sms-gate.app), turn on
+**Cloud Server**, tap **Offline** so it says **Online**, and put the username and password it shows in `server/.env`
+as `SMS_GATEWAY_USER` and `SMS_GATEWAY_PASS`. Texts are then sent from that phone's SIM at its normal SMS rate or
+bundle. The phone must stay on and online, so use this for testing only; it takes priority over Africa's Talking
+while the two lines are set.
+
+The same connection also sends a text copy of the notifications people must not miss: new orders, Mobile Money
+payment details and confirmations, parcels sent or ready to collect, cancellations, returns, refunds, payouts, price
+quotes and offers, and decisions about a shop. Each is one plain SMS (160 characters). Vouchers, announcements,
+listing changes and support replies stay in the app only, so a campaign to everyone never sends thousands of texts.
+A text that can't be sent never blocks the order; the notification is still in the app.
+
 Check the connection with `npm run sms:test -- 0977123456`. The API window shows which SMS provider is in use when it
 starts. Without these settings, codes are printed in the API window instead. If a message can't be sent, the
 person sees "We couldn't send the SMS" and can try again straight away; the reason is written in the API window.
@@ -257,16 +300,18 @@ the dashboard.
 
 ## Still to do before launch
 
-- **SMS provider:** connected through Africa's Talking (see below); add your live API key before launch.
-- **Mobile Money and card payments**: orders paid by MoMo or card are currently recorded as paid without charging
-  anyone. Needs a payment provider, held funds until delivery, and seller payouts.
-- **SMS/WhatsApp copies of notifications**: notifications are in the app only for now.
+- **SMS provider:** connected through Africa's Talking (see above); add your live `AT_USERNAME` and `AT_API_KEY`
+  to `server/.env` before launch. Without them no sign-in code or order text is sent.
+- **A payment provider** (Mobile Money collections and cards), so Zed Market can hold the money until delivery and
+  pay shops out. Until then buyers pay shops directly (see Payments) and Zed Market cannot protect a payment.
+- **Commission account:** save the Mobile Money number shops send their commission to in Admin → Payouts.
+- **WhatsApp copies of notifications**: important notifications go by SMS; WhatsApp needs a WhatsApp Business account.
 - **Legal review:** the pages under `/legal` are drafts and must be reviewed by a Zambian lawyer. Register with the
   Office of the Data Protection Commissioner as required.
 - **Tax:** receipts are not ZRA Smart Invoices. Shops that must issue fiscal invoices still need to do so, and
   Zed Market's own commission invoicing needs ZRA integration.
 - **Real delivery data:** enter courier rates and Zed Market Points in Admin → Delivery, and the commission rate in
-  Admin → Settings.
+  Admin → Settings. The admin Overview lists whichever of these are still missing.
 - **Photo storage** in object storage (S3-compatible) for multi-server hosting; photos are currently saved to disk.
 - A search index (e.g. a trigram index over product name, description and shop) once the catalogue reaches tens of
   thousands of products. Synonym and town matching currently scan the product table.

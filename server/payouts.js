@@ -6,7 +6,8 @@ import { RETURN_DAYS } from './routes/cases.js';
 // - a cash-on-delivery parcel: the shop already collected the cash, so it only gets the Zed Market voucher
 //   back (the part of the price the buyer didn't pay) and owes the commission;
 // - refunds after a return come out of the shop's money, with the commission on refunded goods given back;
-// - payouts already made are subtracted.
+// - payouts already made are subtracted, and commission the shop has paid to Zed Market is added back.
+// A negative `available` is commission the shop owes; it is also given as the positive `owed`.
 // Money from a parcel is "on hold" until the return window has passed and no return case is open.
 export async function shopBalances(q, shopId = null) {
   const parcels = await q.query(
@@ -28,14 +29,26 @@ export async function shopBalances(q, shopId = null) {
     [shopId],
   );
   const paid = await q.query(
-    `SELECT shop_id, sum(amount) AS total, max(created_at) AS last_at
+    `SELECT shop_id,
+            COALESCE(sum(amount) FILTER (WHERE kind = 'payout'), 0) AS total,
+            COALESCE(sum(amount) FILTER (WHERE kind = 'commission'), 0) AS commission_paid,
+            max(created_at) FILTER (WHERE kind = 'payout') AS last_at
        FROM payouts WHERE ($1::text IS NULL OR shop_id = $1) GROUP BY shop_id`,
     [shopId],
   );
 
   const balances = {};
   const of = (id) =>
-    (balances[id] ??= { shopId: id, earned: 0, onHold: 0, refunds: 0, paidOut: 0, lastPayoutAt: null, parcels: 0 });
+    (balances[id] ??= {
+      shopId: id,
+      earned: 0,
+      onHold: 0,
+      refunds: 0,
+      paidOut: 0,
+      commissionPaid: 0,
+      lastPayoutAt: null,
+      parcels: 0,
+    });
   const holdUntil = Date.now() - RETURN_DAYS * 864e5;
   if (shopId) of(shopId);
 
@@ -61,18 +74,28 @@ export async function shopBalances(q, shopId = null) {
   for (const p of paid) {
     const b = of(p.shop_id);
     b.paidOut = Number(p.total);
+    b.commissionPaid = Number(p.commission_paid);
     b.lastPayoutAt = p.last_at;
   }
   for (const b of Object.values(balances)) {
-    for (const k of ['earned', 'onHold', 'refunds', 'paidOut']) b[k] = round2(b[k]);
-    // Available now: cleared earnings minus refunds and payouts. Can be negative when a COD shop owes commission.
-    b.available = round2(b.earned - b.refunds - b.paidOut);
+    for (const k of ['earned', 'onHold', 'refunds', 'paidOut', 'commissionPaid']) b[k] = round2(b[k]);
+    // Available now: cleared earnings minus refunds and payouts, plus commission already paid in.
+    // Negative when the shop, which was paid directly by its buyers, owes commission.
+    b.available = round2(b.earned - b.refunds - b.paidOut + b.commissionPaid);
+    b.owed = Math.max(0, round2(-b.available));
   }
   return shopId ? balances[shopId] : Object.values(balances);
 }
 
+// Where shops send the commission they owe, or null until staff have set it.
+export async function commissionAccount(q) {
+  const [row] = await q.query('SELECT network, number, name FROM commission_account');
+  return row ?? null;
+}
+
 export const toPayout = (p) => ({
   id: p.id,
+  kind: p.kind ?? 'payout',
   shopId: p.shop_id,
   shopName: p.shop_name,
   amount: Number(p.amount),

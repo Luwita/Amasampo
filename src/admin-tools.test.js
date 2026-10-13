@@ -112,3 +112,41 @@ test('staff take down a buying request with a reason', async () => {
   await waitFor(() => expect(api.__db().requests[0].status).toBe('removed'));
   expect(await screen.findByText('Nothing here.')).toBeInTheDocument();
 });
+
+test('a shop paid directly sees the commission it owes; staff record it when it is paid', async () => {
+  const { staffToken, sellerToken } = setup();
+  // A K500 parcel the buyer paid the shop for by Mobile Money: the shop owes the K25 commission.
+  api.__db().orders.push({
+    id: 'ZM-MOMO1',
+    buyerId: 'usr_2',
+    payByMomo: true,
+    paid: true,
+    total: 500,
+    shipping: { province: 'lusaka', town: 'Lusaka' },
+    shipments: [{ shopId: 'shop_fans', status: 'delivered', paid: true, subtotal: 500, discount: 0, fee: 0, items: [] }],
+  });
+  api.setToken(staffToken);
+  await api.admin.saveCommissionAccount({ network: 'airtel', number: '0977000999', name: 'Zed Market Ltd' });
+
+  api.setToken(sellerToken);
+  const shop = renderAt('/seller?tab=report');
+  expect(await screen.findByText('Send K25 to Zed Market')).toBeInTheDocument();
+  expect(screen.getByText('0977000999')).toBeInTheDocument();
+  shop.unmount();
+
+  api.setToken(staffToken);
+  const staff = renderAt('/admin?tab=payouts');
+  const row = (await screen.findByRole('link', { name: 'Mutinta Appliances' })).closest('tr');
+  fireEvent.click(within(row).getByRole('button', { name: 'Commission received' }));
+  expect(within(row).getByLabelText('Amount')).toHaveValue(25);
+  type('Reference', 'MP261013.0800');
+  fireEvent.click(within(row).getByRole('button', { name: 'Record commission' }));
+  expect(await screen.findByText(/commission from Mutinta Appliances/)).toBeInTheDocument();
+  staff.unmount();
+
+  api.setToken(sellerToken);
+  renderAt('/seller?tab=report');
+  expect(await screen.findByText(/commission you paid/)).toBeInTheDocument();
+  expect(screen.queryByText(/to Zed Market$/)).not.toBeInTheDocument();
+  expect(api.__db().notifications[0].title).toBe('Zed Market received your K25 commission');
+});

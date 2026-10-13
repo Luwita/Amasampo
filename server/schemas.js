@@ -1,10 +1,11 @@
 // Request validation shared by the API routes.
 import { z } from 'zod';
-import { categories } from '../src/data/catalog.js';
+import { categories, momoNetworks } from '../src/data/catalog.js';
 import { couriers } from '../src/data/couriers.js';
 import { getProvince } from '../src/data/zambia.js';
 
 const COURIER_IDS = couriers.map((c) => c.id);
+const MOMO_NETWORK_IDS = momoNetworks.map((n) => n.id);
 export const CATEGORY_IDS = categories.map((c) => c.id);
 const PHONE = /^(\+?260|0)?[79]\d{8}$/;
 
@@ -31,6 +32,16 @@ export const shopSchema = z
     about: z.string().trim().max(1000).optional().nullable(),
     openingHours: z.string().trim().max(120).optional().nullable(),
     vatRegistered: z.boolean().default(false),
+    // Where buyers send Mobile Money for their orders.
+    momoNetwork: z.enum(MOMO_NETWORK_IDS, { message: 'Choose the network of your Mobile Money number' }),
+    momoNumber: z
+      .string({ message: 'Enter your Mobile Money number' })
+      .refine((p) => PHONE.test(p.replace(/\s/g, '')), 'Enter a valid Mobile Money number'),
+    momoName: z
+      .string({ message: 'Enter the name your Mobile Money number is registered in' })
+      .trim()
+      .min(3, 'Enter the name your Mobile Money number is registered in')
+      .max(80),
     couriers: z
       .array(z.enum(COURIER_IDS))
       .refine((ids) => ids.some((id) => id !== 'pickup'), 'Choose at least one delivery option'),
@@ -94,7 +105,7 @@ const cartFields = {
     .min(1, 'Your cart is empty')
     .max(100),
   couriers: z.record(z.string(), z.enum(COURIER_IDS)),
-  payment: z.enum(['mtn', 'airtel', 'zamtel', 'card', 'cod']),
+  payment: z.enum(['momo', 'cod'], { message: 'Choose Mobile Money or Pay on Delivery' }),
   coupon: z.string().trim().max(30).optional().nullable(),
   voucherId: z.string().max(40).optional().nullable(),
   pickupPoint: z.string().max(40).optional().nullable(),

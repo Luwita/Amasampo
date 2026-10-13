@@ -81,11 +81,11 @@ test('a discount code is checked by the server and lowers the total at checkout'
   fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   expect(await screen.findByText(/FAN10 at Mutinta Appliances/)).toBeInTheDocument();
   // 2 × K500 = K1000, −10% = K900, plus K45 Yango.
-  expect(screen.getByRole('button', { name: 'Pay K945' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Place order · K945' })).toBeInTheDocument();
 
   type('Street address or landmark', 'Plot 3');
-  fireEvent.click(screen.getByRole('button', { name: 'Pay K945' }));
-  expect(await screen.findByText(/Your order is confirmed/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Place order · K945' }));
+  expect(await screen.findByText(/One more step: pay the shop/)).toBeInTheDocument();
   expect(api.__db().orders[0]).toMatchObject({ discount: 100, total: 945 });
 });
 
@@ -116,8 +116,8 @@ test('wholesale price request: ask, quote, accept, and check out at the agreed p
   fireEvent.click(screen.getByRole('link', { name: /^Checkout/ }));
   type(await screen.findByLabelText('Street address or landmark').then(() => 'Street address or landmark'), 'Plot 9');
   fireEvent.click(screen.getByLabelText(/Collect from shop/));
-  fireEvent.click(screen.getByRole('button', { name: 'Pay K16,000' })); // 40 × K400, not the K450 tier
-  expect(await screen.findByText(/Your order is confirmed/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Place order · K16,000' })); // 40 × K400, not the K450 tier
+  expect(await screen.findByText(/One more step: pay the shop/)).toBeInTheDocument();
   expect(api.__db().priceRequests[0].status).toBe('ordered');
 });
 
@@ -127,7 +127,7 @@ test('the receipt shows the shop TPIN and the VAT included', async () => {
     items: [{ productId: 'prd_fan', qty: 1 }],
     shipping: { name: 'Chipo', phone: '0966111000', province: 'lusaka', town: 'Lusaka', address: 'Plot 3' },
     couriers: { shop_fans: 'pickup' },
-    payment: 'mtn',
+    payment: 'momo',
   });
   renderAt(`/order/${order.id}/receipt`);
   expect(await screen.findByText(/TPIN 1002003004/)).toBeInTheDocument();

@@ -20,7 +20,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 async function signIn(phone, extra = {}) {
@@ -39,7 +45,7 @@ const shopBody = (phone, name) => ({
   province: 'lusaka',
   town: 'Lusaka',
   area: 'Cairo Road',
-  couriers: ['pickup', 'seller'],
+  momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'seller'],
 });
 
 let owner;
@@ -51,7 +57,7 @@ const order = () =>
   api(
     'POST',
     '/api/orders',
-    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'mtn' },
+    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'momo' },
     buyer.token,
   );
 const notificationsOf = async (token) => (await api('GET', '/api/notifications', undefined, token)).body;
@@ -147,7 +153,7 @@ describe('platform settings', () => {
       'the earlier order keeps 5%, the new one pays 10%',
     );
     const { onHold } = (await api('GET', '/api/seller/payouts', undefined, seller.token)).body;
-    assert.equal(onHold, 925);
+    assert.equal(onHold, -75, 'the shop was paid directly, so it owes the K25 + K50 commission');
 
     const { code } = (await api('GET', '/api/me/referral', undefined, buyer.token)).body;
     const friend = await signIn('0966400400', { referralCode: code });

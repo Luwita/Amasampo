@@ -20,7 +20,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 async function signIn(phone, extra = {}) {
@@ -40,7 +46,7 @@ const order = (extra = {}, token = buyer.token) =>
   api(
     'POST',
     '/api/orders',
-    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'mtn', ...extra },
+    { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'momo', ...extra },
     token
   );
 const notificationsOf = async (token) => (await api('GET', '/api/notifications', undefined, token)).body;
@@ -70,7 +76,7 @@ before(async () => {
       province: 'lusaka',
       town: 'Lusaka',
       area: 'Cairo Road',
-      couriers: ['pickup', 'seller'],
+      momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'seller'],
     },
     seller.token
   );
@@ -178,7 +184,7 @@ describe('buying requests', () => {
     await api(
       'POST',
       '/api/shops',
-      { name: 'New Shop', ownerFullName: 'New Owner', nrc: '111111/11/1', phone: '0977200200', province: 'lusaka', town: 'Lusaka', area: 'Kamwala', couriers: ['pickup', 'bus'] },
+      { name: 'New Shop', ownerFullName: 'New Owner', nrc: '111111/11/1', phone: '0977200200', province: 'lusaka', town: 'Lusaka', area: 'Kamwala', momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'bus'] },
       newOwner.token
     );
     assert.equal((await api('POST', `/api/buying-requests/${id}/offers`, { price: 140 }, newOwner.token)).status, 403);

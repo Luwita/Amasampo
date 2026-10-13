@@ -111,7 +111,8 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false, adminPho
       await db.query('DELETE FROM otp_codes WHERE phone = $1', [phone]);
       throw err;
     }
-    res.json({ sent: true, ...(exposeCodes ? { devCode: code } : {}) });
+    // Without an SMS provider the code is only printed in the server window.
+    res.json({ sent: sms.provider !== 'console', ...(exposeCodes ? { devCode: code } : {}) });
   });
 
   router.post('/verify', async (req, res) => {

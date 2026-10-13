@@ -37,7 +37,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 async function signIn(phone, name = 'Test') {
@@ -55,7 +61,7 @@ const cart = (extra = {}) => ({
   items: [{ productId: fanId, qty: 2 }],
   shipping,
   couriers: { [seller.shopId]: 'pickup' },
-  payment: 'mtn',
+  payment: 'momo',
   ...extra,
 });
 
@@ -72,7 +78,7 @@ async function setupShop() {
       province: 'lusaka',
       town: 'Lusaka',
       area: 'Cairo Road',
-      couriers: ['pickup', 'yango'],
+      momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'yango'],
       tpin: '1002003004',
       vatRegistered: true,
     },
@@ -372,7 +378,8 @@ describe('statements and account data', () => {
     assert.equal(statement.totals.subtotal, 1000);
     assert.equal(statement.totals.discount, 100);
     assert.equal(statement.totals.commission, 45); // 5% of K900
-    assert.equal(statement.totals.payout, 855);
+    assert.equal(statement.totals.cashCollected, 900, 'the buyer paid the shop directly');
+    assert.equal(statement.totals.payout, -45, 'so the shop owes the commission');
     assert.equal(statement.shop.tpin, '1002003004');
     assert.equal((await api('GET', '/api/seller/statement?month=2026-13', undefined, seller.token)).status, 400);
   });

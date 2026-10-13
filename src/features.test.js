@@ -51,8 +51,8 @@ test('only ticked cart items are bought, and a Zed Market voucher lowers the tot
   expect(screen.queryByText(/Desk Lamp/)).not.toBeInTheDocument();
   fireEvent.change(await screen.findByLabelText('Voucher'), { target: { value: 'vch_1' } });
   expect(await screen.findByText('Zed Market voucher')).toBeInTheDocument();
-  fireEvent.click(await screen.findByRole('button', { name: 'Pay K450' })); // K500 − K50 voucher
-  expect(await screen.findByText(/Your order is confirmed/)).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Place order · K450' })); // K500 − K50 voucher
+  expect(await screen.findByText(/One more step: pay the shop/)).toBeInTheDocument();
 
   expect(api.__db().vouchers[0].usedOrderId).toBe('ZM-TEST1');
   expect(JSON.parse(localStorage.getItem('zedmarket.cart'))).toEqual([{ id: 'prd_lamp', qty: 1, selected: false }]);

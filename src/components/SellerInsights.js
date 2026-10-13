@@ -57,7 +57,7 @@ export function SalesReport({ onEditProduct }) {
             i.qty * i.price,
             s.courierName,
             s.status,
-            o.paid ? 'Paid' : 'Cash on delivery',
+            s.paid ? 'Paid' : o.payByMomo ? 'Waiting for payment' : 'Cash on delivery',
           ]),
         ),
       ),

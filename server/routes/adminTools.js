@@ -4,13 +4,16 @@ import { round2 } from '../../src/data/fees.js';
 import { getSettings } from '../settings.js';
 import { bannerThemes } from '../../src/data/bannerThemes.js';
 import { getProvince } from '../../src/data/zambia.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, requireOwner } from '../auth.js';
 import { HttpError, newId, parse } from '../http.js';
 import { notify, notifyShopOwner } from '../notify.js';
-import { shopBalances, toPayout } from '../payouts.js';
+import { commissionAccount, shopBalances, toPayout } from '../payouts.js';
+import { formatK } from '../../src/utils/format.js';
 import { logAdmin } from '../queries.js';
 import { normalizePhone } from '../../src/utils/format.js';
 import { SELECT as REQUEST_SELECT, toRequest } from './buyingRequests.js';
+
+const PAY_NAMES = { mtn: 'MTN MoMo', airtel: 'Airtel Money', zamtel: 'Zamtel Kwacha', bank: 'bank account' };
 
 // Zambian local date of a timestamp column (Zambia is UTC+2 all year).
 const localDay = (col) => `((${col} AT TIME ZONE 'UTC') + interval '2 hours')::date`;
@@ -227,6 +230,90 @@ export function adminToolRoutes(db) {
       return { ...row, shop_name: shop.name };
     });
     res.status(201).json(toPayout(payout));
+  });
+
+  // ----- Commission owed by shops -----
+  // Buyers pay shops directly, so each shop sends Zed Market its commission. This is where they send it.
+  router.get('/commission-account', async (_req, res) => {
+    res.json(await commissionAccount(db));
+  });
+
+  router.put('/commission-account', requireOwner, async (req, res) => {
+    const b = parse(
+      z.object({
+        network: z.enum(['mtn', 'airtel', 'zamtel', 'bank'], { message: 'Choose the network or bank' }),
+        number: z.string().trim().min(6, 'Enter the Mobile Money number or bank account').max(40),
+        name: z.string().trim().min(3, 'Enter the name the account is registered in').max(80),
+      }),
+      req.body,
+    );
+    await db.tx(async (t) => {
+      await t.query(
+        `INSERT INTO commission_account (id, network, number, name, updated_by) VALUES (true, $1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET network = $1, number = $2, name = $3, updated_by = $4, updated_at = now()`,
+        [b.network, b.number, b.name, req.user.id],
+      );
+      await logAdmin(t, req.user.id, 'commission account changed', 'settings', 'commission', `${b.network} ${b.number} ${b.name}`);
+    });
+    res.json(b);
+  });
+
+  // A shop has paid commission it owed: record it against its balance.
+  router.post('/commission', async (req, res) => {
+    const b = parse(
+      z.object({
+        shopId: z.string().max(40),
+        amount: z.coerce.number().positive('Enter the amount received'),
+        method: z.enum(['mtn', 'airtel', 'zamtel', 'bank']),
+        reference: z.string().trim().min(3, 'Enter the Mobile Money or bank reference').max(60),
+        note: z.string().trim().max(300).default(''),
+      }),
+      req.body,
+    );
+    const payment = await db.tx(async (t) => {
+      const [shop] = await t.query('SELECT id, name FROM shops WHERE id = $1 FOR UPDATE', [b.shopId]);
+      if (!shop) throw new HttpError(404, 'Shop not found');
+      const { owed } = await shopBalances(t, shop.id);
+      if (round2(b.amount) > owed) {
+        throw new HttpError(409, owed ? `${shop.name} only owes ${formatK(owed)}` : `${shop.name} doesn't owe any commission`);
+      }
+      const [row] = await t.query(
+        `INSERT INTO payouts (id, shop_id, amount, method, reference, note, created_by, kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'commission') RETURNING *`,
+        [newId('pay'), shop.id, round2(b.amount), b.method, b.reference, b.note, req.user.id],
+      );
+      await logAdmin(t, req.user.id, 'commission received', 'shop', shop.id, `K${round2(b.amount)} ${b.method} ${b.reference}`);
+      const left = round2(owed - round2(b.amount));
+      await notifyShopOwner(t, shop.id, {
+        kind: 'payout',
+        title: `Zed Market received your ${formatK(round2(b.amount))} commission`,
+        body: `Reference ${b.reference}. ${left ? `You still owe ${formatK(left)}.` : 'Nothing more is owed. Thank you.'}`,
+        link: '/seller?tab=report',
+      });
+      return { ...row, shop_name: shop.name };
+    });
+    res.status(201).json(toPayout(payment));
+  });
+
+  // Ask a shop to pay the commission it owes (in the app and by text).
+  router.post('/commission/remind', async (req, res) => {
+    const { shopId } = parse(z.object({ shopId: z.string().max(40) }), req.body);
+    const [shop] = await db.query('SELECT id, name FROM shops WHERE id = $1', [shopId]);
+    if (!shop) throw new HttpError(404, 'Shop not found');
+    const { owed } = await shopBalances(db, shop.id);
+    if (!owed) throw new HttpError(409, `${shop.name} doesn't owe any commission`);
+    const account = await commissionAccount(db);
+    if (!account) throw new HttpError(409, 'First save where shops should send their commission');
+    await db.tx(async (t) => {
+      await notifyShopOwner(t, shop.id, {
+        kind: 'payout',
+        title: `Please pay ${formatK(owed)} commission`,
+        body: `Send it to ${PAY_NAMES[account.network]} ${account.number} (${account.name}) with your shop name as the reference.`,
+        link: '/seller?tab=report',
+      });
+      await logAdmin(t, req.user.id, 'commission reminder', 'shop', shop.id, formatK(owed));
+    });
+    res.json({ ok: true, owed });
   });
 
   // ----- Homepage banners -----

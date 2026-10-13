@@ -19,7 +19,10 @@ import { formatK } from '../utils/format';
 // Send several parcels at once, e.g. after one trip to the bus station or courier office.
 function BatchDispatch({ orders }) {
   const { updateShipment, notify } = useStore();
-  const pending = orders.filter(({ shipment }) => shipment.status === 'pending');
+  // Mobile Money parcels can only be sent once the shop has confirmed the payment.
+  const pending = orders.filter(
+    ({ order, shipment }) => shipment.status === 'pending' && !(order.payByMomo && !shipment.paid),
+  );
   const [picked, setPicked] = useState([]);
   const [busy, setBusy] = useState(false);
   if (pending.length < 2) return null;
@@ -67,10 +70,23 @@ function BatchDispatch({ orders }) {
 }
 
 function OrderCard({ order, shipment }) {
-  const { updateShipment, notify } = useStore();
+  const { updateShipment, confirmPayment, notify } = useStore();
   const [tracking, setTracking] = useState(shipment.tracking);
   const [busy, setBusy] = useState(false);
   const pickup = shipment.courier === 'pickup';
+  const awaitingPayment = order.payByMomo && !shipment.paid;
+
+  const confirmPaid = async () => {
+    setBusy(true);
+    try {
+      await confirmPayment(order.id, shipment.shopId);
+      notify('Payment confirmed. The buyer has been told. You can now send the parcel.');
+    } catch (err) {
+      notify(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const advance = async (patch, message) => {
     setBusy(true);
@@ -105,13 +121,42 @@ function OrderCard({ order, shipment }) {
         👤 {order.buyer.name} · {order.buyer.phone} · 📍 {order.shipping.address}, {formatLocation(order.shipping)}
       </div>
       <div className="small">
-        {order.paid ? '✅ Paid' : '💵 Collect payment on delivery'}: <strong>{formatK(shipment.subtotal)}</strong> +
-        delivery {formatK(shipment.fee)}
+        {shipment.paid
+          ? order.payByMomo
+            ? '✅ Paid to your Mobile Money'
+            : '✅ Paid'
+          : awaitingPayment
+            ? '⏳ Not paid yet'
+            : '💵 Collect payment on delivery'}
+        : <strong>{formatK(shipment.subtotal)}</strong> + delivery {formatK(shipment.fee)}
       </div>
       <ShipmentStatus shipment={shipment} viewer="shop" />
       {shipment.pickupPoint && <div className="small">📮 Send to {shipment.pickupPoint}</div>}
 
-      {shipment.status === 'pending' && (
+      {shipment.status === 'pending' && awaitingPayment && (
+        <div className="pay-shop">
+          <strong>
+            Wait for {formatK(shipment.due)} on your Mobile Money
+            {shipment.payTo && ` (${shipment.payTo.networkName} ${shipment.payTo.number})`}
+          </strong>
+          <p className="small">
+            {shipment.paymentSentAt
+              ? `${order.buyer.name} says the money was sent${
+                  shipment.paymentRef ? `, transaction ID ${shipment.paymentRef}` : ''
+                }.`
+              : `${order.buyer.name} has your number and hasn't paid yet.`}{' '}
+            Check your Mobile Money balance, not only the SMS, and confirm only when the money is really there. Don't
+            send the parcel before that.
+          </p>
+          <div className="dispatch-row">
+            <CancelParcel orderId={order.id} shopId={shipment.shopId} role="seller" />
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={confirmPaid}>
+              Payment received
+            </button>
+          </div>
+        </div>
+      )}
+      {shipment.status === 'pending' && !awaitingPayment && (
         <div className="dispatch-row">
           <CancelParcel orderId={order.id} shopId={shipment.shopId} role="seller" />
           {!pickup && (
@@ -221,7 +266,8 @@ function ProductList({ result, lowOnly, go }) {
 
 const PAYOUT_METHODS = { mtn: 'MTN MoMo', airtel: 'Airtel Money', zamtel: 'Zamtel Kwacha', bank: 'Bank transfer' };
 
-// What Zed Market owes the shop and the payouts already made.
+// The balance between the shop and Zed Market: commission the shop owes (and where to pay it), or money
+// Zed Market owes the shop, and the payments already made either way.
 function SellerPayouts() {
   const [p, setP] = useState(null);
   useEffect(() => {
@@ -235,11 +281,19 @@ function SellerPayouts() {
     <section className="card form-card">
       <h3>💰 Your money</h3>
       <div className="tiles">
-        <div className="tile">
-          <span>Ready to be paid</span>
-          <strong className={p.available < 0 ? 'error' : ''}>{formatK(p.available)}</strong>
-          <small>{p.available < 0 ? 'commission owed on cash orders' : 'paid to you by Mobile Money or bank'}</small>
-        </div>
+        {p.available < 0 ? (
+          <div className="tile">
+            <span>Commission you owe</span>
+            <strong className="error">{formatK(-p.available)}</strong>
+            <small>on orders your buyers paid you for</small>
+          </div>
+        ) : (
+          <div className="tile">
+            <span>Ready to be paid</span>
+            <strong>{formatK(p.available)}</strong>
+            <small>paid to you by Mobile Money or bank</small>
+          </div>
+        )}
         <div className="tile">
           <span>On hold</span>
           <strong>{formatK(p.onHold)}</strong>
@@ -249,12 +303,40 @@ function SellerPayouts() {
           <span>Paid to you so far</span>
           <strong>{formatK(p.paidOut)}</strong>
         </div>
+        {p.commissionPaid > 0 && (
+          <div className="tile">
+            <span>Commission you've paid</span>
+            <strong>{formatK(p.commissionPaid)}</strong>
+          </div>
+        )}
       </div>
+      {p.available < 0 && (
+        <div className="pay-shop">
+          <strong>Send {formatK(-p.available)} to Zed Market</strong>
+          {p.payTo ? (
+            <dl className="pay-to">
+              <dt>{PAYOUT_METHODS[p.payTo.network]}</dt>
+              <dd>{p.payTo.number}</dd>
+              <dt>Name</dt>
+              <dd>{p.payTo.name}</dd>
+              <dt>Reference</dt>
+              <dd>Your shop name</dd>
+            </dl>
+          ) : (
+            <p className="small">Zed Market will tell you where to send it.</p>
+          )}
+          <p className="muted small">
+            Your buyers paid you directly, so the commission on those orders is yours to pass on. Zed Market records
+            your payment when it arrives and you get a message.
+          </p>
+        </div>
+      )}
       {p.history.length > 0 && (
         <ul className="admin-log">
           {p.history.map((h) => (
             <li key={h.id}>
-              <strong>{formatK(h.amount)}</strong> · {PAYOUT_METHODS[h.method]} {h.reference}
+              <strong>{formatK(h.amount)}</strong> {h.kind === 'commission' ? 'commission you paid' : 'paid to you'} ·{' '}
+              {PAYOUT_METHODS[h.method]} {h.reference}
               <span className="muted small"> · {new Date(h.date).toLocaleDateString('en-ZM', { dateStyle: 'medium' })}</span>
             </li>
           ))}
@@ -390,6 +472,15 @@ export default function SellerDashboard() {
       </div>
 
       <ShopNotices />
+
+      {myShop.ownerId === user.id && !myShop.takesMomo && (
+        <div className="card alert-bar" role="status">
+          📲 Add your Mobile Money number so buyers can pay you. Until you do, they can only pay on delivery.{' '}
+          <button className="link-btn" onClick={() => go({ tab: 'settings' })}>
+            Add it now
+          </button>
+        </div>
+      )}
 
       {lowCount > 0 && tab !== 'report' && (
         <div className="card alert-bar" role="status">

@@ -6,7 +6,7 @@ import { round2 } from '../../src/data/fees.js';
 import { getSettings } from '../settings.js';
 import { toProduct, toReview } from '../mappers.js';
 import { myShopOrFail } from '../queries.js';
-import { shopBalances, toPayout } from '../payouts.js';
+import { commissionAccount, shopBalances, toPayout } from '../payouts.js';
 import { verificationSchema } from '../schemas.js';
 
 // Tools for the signed-in shop owner.
@@ -74,7 +74,12 @@ export function sellerRoutes(db) {
   router.get('/payouts', async (req, res) => {
     const shop = await myShopOrFail(db, req.user);
     const history = await db.query('SELECT * FROM payouts WHERE shop_id = $1 ORDER BY created_at DESC LIMIT 50', [shop.id]);
-    res.json({ ...(await shopBalances(db, shop.id)), history: history.map(toPayout) });
+    res.json({
+      ...(await shopBalances(db, shop.id)),
+      history: history.map(toPayout),
+      // Where to send commission the shop owes.
+      payTo: await commissionAccount(db),
+    });
   });
 
   router.get('/statement', async (req, res) => {

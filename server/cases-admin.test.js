@@ -20,7 +20,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 async function signIn(phone, name = 'Test') {
@@ -44,7 +50,7 @@ const order = (extra = {}, token = buyer.token) =>
       items: [{ productId: fanId, qty: 2 }],
       shipping,
       couriers: { [seller.shopId]: 'yango' },
-      payment: 'mtn',
+      payment: 'momo',
       ...extra,
     },
     token,
@@ -80,7 +86,7 @@ before(async () => {
       province: 'lusaka',
       town: 'Lusaka',
       area: 'Cairo Road',
-      couriers: ['pickup', 'yango'],
+      momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'yango'],
     },
     seller.token,
   );
@@ -285,9 +291,9 @@ describe('returns and disputes', () => {
     const st = (await api('GET', `/api/seller/statement?month=${month}`, undefined, seller.token)).body;
     assert.equal(st.totals.refunds, 1045);
     assert.equal(st.refunds.length, 2);
-    // Two delivered parcels of K1000 + K45: payout 2 × (1000 + 45 − K50 commission) = 1990.
+    // Two delivered parcels of K1000 + K45, paid straight to the shop: it owes 2 × K50 commission.
     // Refunds of K500 + K545 cover the K1000 goods and K45 delivery, so exactly K50 commission comes back.
-    assert.equal(st.totals.payout, 1990 - 1045 + 50);
+    assert.equal(st.totals.payout, -100 - 1045 + 50);
   });
 });
 
@@ -311,7 +317,7 @@ describe('staff tools', () => {
       province: 'copperbelt',
       town: 'Ndola',
       area: 'Broadway',
-      couriers: ['pickup', 'platinum'],
+      momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'platinum'],
     };
     // Owner details are required to apply.
     assert.equal((await api('POST', '/api/shops', body, owner.token)).status, 400);
@@ -349,7 +355,7 @@ describe('staff tools', () => {
     const order = await api(
       'POST',
       '/api/orders',
-      { items: [{ productId: radio.id, qty: 1 }], shipping, couriers: { [shopId]: 'pickup' }, payment: 'mtn' },
+      { items: [{ productId: radio.id, qty: 1 }], shipping, couriers: { [shopId]: 'pickup' }, payment: 'momo' },
       buyer.token,
     );
     assert.equal(order.status, 409);

@@ -20,7 +20,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 async function signIn(phone, extra = {}) {
@@ -36,7 +42,7 @@ let seller;
 let buyer;
 let fanId;
 const shipping = { name: 'Chipo', phone: '0966100100', province: 'lusaka', town: 'Lusaka', address: 'Plot 3' };
-const order = (payment = 'mtn') =>
+const order = (payment = 'momo') =>
   api(
     'POST',
     '/api/orders',
@@ -77,7 +83,7 @@ before(async () => {
       province: 'lusaka',
       town: 'Lusaka',
       area: 'Cairo Road',
-      couriers: ['pickup', 'seller'],
+      momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'seller'],
     },
     seller.token,
   );
@@ -104,7 +110,9 @@ describe('admin tools', () => {
 
   test('payouts: money is held through the return window, then paid out once', async () => {
     const balance = async () => (await api('GET', '/api/seller/payouts', undefined, seller.token)).body;
-    const paid = (await order('mtn')).body;
+    // An order paid to Zed Market, as it will be once a payment provider is connected.
+    const paid = (await order('momo')).body;
+    await db.query(`UPDATE orders SET payment_status = 'paid' WHERE id = $1`, [paid.id]);
     await deliver(paid.id);
     let b = await balance();
     assert.equal(b.onHold, 475, 'K500 − 5% commission, waiting for the return window');
@@ -156,7 +164,7 @@ describe('admin tools', () => {
     assert.equal(a.provinces[0].key, 'lusaka');
     assert.equal(a.shops[0].name, 'Mutinta Appliances');
     assert.equal(a.categories[0].key, 'home');
-    assert.deepEqual(a.payments.map((p) => p.key).sort(), ['MTN Mobile Money', 'Pay on Delivery']);
+    assert.deepEqual(a.payments.map((p) => p.key).sort(), ['Mobile Money', 'Pay on Delivery']);
   });
 
   test('home page banners: staff create and hide them; links stay on Zed Market', async () => {
@@ -188,7 +196,7 @@ describe('admin tools', () => {
     const quote = await api(
       'POST',
       '/api/orders/quote',
-      { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'mtn', voucherId: voucher.id },
+      { items: [{ productId: fanId, qty: 1 }], shipping, couriers: { [seller.shopId]: 'pickup' }, payment: 'momo', voucherId: voucher.id },
       buyer.token,
     );
     assert.equal(quote.body.total, 470);

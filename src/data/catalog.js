@@ -793,10 +793,15 @@ export function unitPrice(product, qty) {
   return price;
 }
 
+// Mobile Money is sent straight to the shop's number; the shop confirms it arrived before sending the parcel.
 export const paymentMethods = [
-  { id: 'mtn', name: 'MTN Mobile Money', icon: '🟡', hint: 'Approve the prompt on your phone' },
-  { id: 'airtel', name: 'Airtel Money', icon: '🔴', hint: 'Approve the prompt on your phone' },
-  { id: 'zamtel', name: 'Zamtel Kwacha', icon: '🟢', hint: 'Approve the prompt on your phone' },
-  { id: 'card', name: 'Visa / Mastercard', icon: '💳', hint: 'Secure 3-D Secure card payment' },
+  { id: 'momo', name: 'Mobile Money', icon: '📲', hint: "Send the money to the shop's MTN, Airtel or Zamtel number" },
   { id: 'cod', name: 'Pay on Delivery', icon: '💵', hint: 'Cash or MoMo when your order arrives' },
 ];
+
+export const momoNetworks = [
+  { id: 'mtn', name: 'MTN MoMo' },
+  { id: 'airtel', name: 'Airtel Money' },
+  { id: 'zamtel', name: 'Zamtel Kwacha' },
+];
+export const momoNetworkName = (id) => momoNetworks.find((n) => n.id === id)?.name ?? 'Mobile Money';

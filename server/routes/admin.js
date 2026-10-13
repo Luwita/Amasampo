@@ -8,6 +8,8 @@ import { cancelShipment, loadOrders, logAdmin, refreshRatings, refundableLeft } 
 import { CASE_SELECT, addReturnRefund, toCase, updateCase } from './cases.js';
 import { notify, notifyShopOwner } from '../notify.js';
 import { shopBalances } from '../payouts.js';
+import { loadDelivery } from '../delivery.js';
+import { couriers } from '../../src/data/couriers.js';
 
 const reason = z
   .string()
@@ -21,7 +23,7 @@ const search = z.object({
 const like = (q) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 // Zed Market staff tools. Every change is written to the activity log with the staff member and the reason.
-export function adminRoutes(db, { adminPhones = [] } = {}) {
+export function adminRoutes(db, { adminPhones = [], sms = null } = {}) {
   const owners = new Set(adminPhones.map(normalizePhone).filter(Boolean));
   const router = Router();
   router.use(requireAdmin);
@@ -40,8 +42,31 @@ export function adminRoutes(db, { adminPhones = [] } = {}) {
       (SELECT count(*) FROM refunds WHERE status = 'due')::int AS refunds_due,
       (SELECT COALESCE(sum(amount), 0) FROM refunds WHERE status = 'due') AS refunds_due_amount,
       (SELECT count(*) FROM support_tickets WHERE status = 'open' AND staff_unread > 0)::int AS support_waiting`);
-    const ready = (await shopBalances(db)).filter((b) => b.available > 0);
+    const balances = await shopBalances(db);
+    const ready = balances.filter((b) => b.available > 0);
+    const owing = balances.filter((b) => b.owed > 0);
+    // What still has to be set up before real customers use the site.
+    const delivery = await loadDelivery(db);
+    const [setup] = await db.query(`SELECT
+      EXISTS (SELECT 1 FROM settings WHERE key = 'commissionRate') AS commission_set,
+      EXISTS (SELECT 1 FROM commission_account) AS commission_account_set,
+      (SELECT count(*) FROM shops WHERE momo_number IS NULL AND owner_id IS NOT NULL)::int AS shops_without_momo`);
     res.json({
+      setup: {
+        sms:
+          !sms?.provider || sms.provider === 'console'
+            ? 'off'
+            : /sandbox/.test(sms.provider)
+              ? 'sandbox'
+              : /gateway/.test(sms.provider)
+                ? 'phone'
+                : 'live',
+        couriersUnconfirmed: couriers.filter((c) => !c.confirmed && !c.disabled).map((c) => c.name),
+        pointsConfirmed: !!delivery.points,
+        commissionSet: setup.commission_set,
+        commissionAccountSet: setup.commission_account_set,
+        shopsWithoutMomo: setup.shops_without_momo,
+      },
       users: row.users,
       shops: row.shops,
       shopsToVerify: row.shops_to_verify,
@@ -56,6 +81,8 @@ export function adminRoutes(db, { adminPhones = [] } = {}) {
       supportWaiting: row.support_waiting,
       payoutsReady: ready.length,
       payoutsReadyAmount: ready.reduce((n, b) => n + b.available, 0),
+      commissionOwedShops: owing.length,
+      commissionOwed: owing.reduce((n, b) => n + b.owed, 0),
     });
   });
 
@@ -372,7 +399,7 @@ export function adminRoutes(db, { adminPhones = [] } = {}) {
   router.get('/refunds', async (req, res) => {
     const { status } = parse(search, req.query);
     const rows = await db.query(
-      `SELECT r.*, o.buyer_name, o.buyer_phone, o.payment_method, sh.name AS shop_name
+      `SELECT r.*, o.buyer_name, o.buyer_phone, o.payment_method, o.payment_status, sh.name AS shop_name, sh.phone AS shop_phone
          FROM refunds r JOIN orders o ON o.id = r.order_id JOIN shops sh ON sh.id = r.shop_id
         WHERE ($1::text IS NULL OR r.status = $1) ORDER BY (r.status = 'due') DESC, r.created_at LIMIT 200`,
       [status || null],
@@ -385,6 +412,9 @@ export function adminRoutes(db, { adminPhones = [] } = {}) {
         buyerName: r.buyer_name,
         buyerPhone: r.buyer_phone,
         paymentMethod: r.payment_method,
+        // The buyer paid the shop directly (Mobile Money or cash), so the shop has the money to give back.
+        heldByShop: r.payment_status !== 'paid',
+        shopPhone: r.shop_phone,
         reason: r.reason,
         amount: Number(r.amount),
         status: r.status,

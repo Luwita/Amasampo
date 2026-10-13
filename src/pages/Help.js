@@ -4,11 +4,11 @@ import * as api from '../api';
 import { useStore } from '../context/StoreContext';
 
 const FAQ = [
-  ['How do I pay?', 'MTN MoMo, Airtel Money, Zamtel Kwacha, Visa/Mastercard, or cash on delivery with some couriers. Your money is held safely until you confirm delivery.'],
+  ['How do I pay?', "By Mobile Money (MTN, Airtel or Zamtel) sent to the shop's number, which you get after placing your order, or cash on delivery with some couriers. Tap \"I've paid\" after sending; the shop sends your parcel once the money arrives."],
   ['When will my order arrive?', 'Each shop sends its own parcel. You see the courier and expected time at checkout, and get a notification when it is sent, with the tracking number.'],
   ['Can I collect my parcel?', 'Yes: collect from the shop, from the bus station (bus parcels), or from a Zed Market Point in your town.'],
   ['Something is wrong with my order', 'Open the order in My account and choose "Report a problem" within 7 days of delivery. If the shop does not help, ask Zed Market to step in.'],
-  ['How do I cancel?', 'Until a parcel is sent, open the order in My account and choose "Cancel this parcel". You are refunded if you paid.'],
+  ['How do I cancel?', 'Until a parcel is sent, open the order in My account and choose "Cancel this parcel". If you already paid, the shop sends your money back.'],
   ['How do I sell on Zed Market?', 'Choose "Open a shop", fill in your details and we review your shop, usually within 2 working days. You can add products straight away.'],
   ['How do vouchers work?', 'Invite friends with your code (My account → Invite & vouchers). They get a voucher when they join, and you get one when their first order arrives.'],
 ];

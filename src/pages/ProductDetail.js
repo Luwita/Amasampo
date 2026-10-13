@@ -369,7 +369,7 @@ export default function ProductDetail() {
           {shop && <DeliveryOptions shop={shop} weightKg={qty * (product.weightKg ?? 1)} />}
 
           <ul className="assurances">
-            <li>🔒 Safe payment: MTN MoMo, Airtel Money, Zamtel Kwacha, Visa or Pay on Delivery</li>
+            <li>📲 Pay by MTN MoMo, Airtel Money or Zamtel Kwacha, or on delivery</li>
             <li>↩️ 7-day returns if the item is not as described</li>
             <li>⚖️ Shipping weight: {formatKg(product.weightKg ?? 1)} per unit</li>
           </ul>

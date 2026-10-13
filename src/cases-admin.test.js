@@ -34,8 +34,12 @@ async function setup() {
     items: [{ productId: 'prd_fan', qty: 2 }],
     shipping: { name: 'Chipo', phone: '0966111000', province: 'lusaka', town: 'Lusaka', address: 'Plot 3' },
     couriers: { shop_fans: 'yango' },
-    payment: 'mtn',
+    payment: 'momo',
   });
+  // The shop confirms the buyer's Mobile Money arrived.
+  api.setToken(sellerToken);
+  await api.confirmPayment(order.id, 'shop_fans');
+  api.setToken(buyerToken);
   return { sellerToken, buyerToken, order };
 }
 

@@ -125,7 +125,7 @@ export default function Login() {
             </p>
             {devCode && (
               <p className="dev-note">
-                Test mode (SMS not connected yet). Your code is <strong>{devCode}</strong>
+                Test mode (no SMS provider connected). Your code is <strong>{devCode}</strong>
               </p>
             )}
             <div className="field">

@@ -1,6 +1,6 @@
 // In-memory stand-in for src/api.js used by the React tests (see setupTests.js).
 // It mirrors the server's behaviour closely enough to drive the UI; the real rules are tested in server/api.test.js.
-import { categories, seedProducts } from '../data/catalog';
+import { categories, momoNetworkName, seedProducts } from '../data/catalog';
 import { band, bandRank } from '../data/couriers';
 import { priceOrder, OrderError } from '../data/pricing';
 import { expandSearch } from '../data/search';
@@ -25,7 +25,7 @@ let token = null;
 
 export function __reset() {
   db = {
-    shops: seedShops.map((s) => ({ ...s, ownerId: null, ownRates: null })),
+    shops: seedShops.map((s) => ({ ...s, ownerId: null, ownRates: null, ...momoFor(s) })),
     products: seedProducts.map((p) => ({ ...p, images: [...p.images] })),
     users: [],
     sessions: {},
@@ -94,6 +94,7 @@ export function __signIn({
       ownRates: null,
       verification: 'verified',
       verified: true,
+      ...momoFor(shop),
       ...shop,
       ownerId: user.id,
     });
@@ -112,6 +113,15 @@ export const __addProduct = (product) =>
     ...product,
   });
 export const __db = () => db;
+
+// Shops in tests take Mobile Money on their shop phone unless a test says otherwise.
+function momoFor(shop) {
+  return { takesMomo: true, momoNetwork: 'mtn', momoNumber: (shop.phone ?? '').replace(/\s/g, ''), momoName: shop.name };
+}
+const payTo = (shop) =>
+  shop.takesMomo
+    ? { network: shop.momoNetwork, networkName: momoNetworkName(shop.momoNetwork), number: shop.momoNumber, name: shop.momoName }
+    : null;
 
 export const getToken = () => token;
 export const setToken = (t) => {
@@ -223,6 +233,7 @@ export async function createShop({ ownerName, ...shop }) {
     since: 2026,
     verification: 'pending',
     verified: false,
+    takesMomo: !!shop.momoNumber,
   };
   db.shops.push(created);
   return copy(created);
@@ -231,7 +242,7 @@ export async function createShop({ ownerName, ...shop }) {
 export async function updateShop(id, patch) {
   const shop = myShop();
   if (shop.id !== id) throw new ApiError(403, 'You can only edit your own shop');
-  Object.assign(shop, patch);
+  Object.assign(shop, patch, { takesMomo: !!(patch.momoNumber ?? shop.momoNumber) });
   return copy(shop);
 }
 
@@ -414,8 +425,9 @@ export async function placeOrder(body) {
     date: new Date().toISOString(),
     buyer: { name: shipping.name, phone: shipping.phone },
     shipping: { province: shipping.province, town: shipping.town, address: shipping.address },
-    payment,
-    paid: payment !== 'cod',
+    payment: payment === 'cod' ? 'Pay on Delivery' : 'Mobile Money',
+    payByMomo: payment !== 'cod',
+    paid: false,
     subtotal: priced.subtotal,
     discount: priced.discount,
     delivery: priced.delivery,
@@ -432,6 +444,11 @@ export async function placeOrder(body) {
         shopVatRegistered: !!shop.vatRegistered,
         status: 'pending',
         tracking: '',
+        due: s.subtotal - s.discount - (s.voucherDiscount ?? 0) + s.fee,
+        paid: false,
+        paymentSentAt: null,
+        paymentRef: null,
+        payTo: payment === 'cod' ? null : payTo(shop),
       };
     }),
   };
@@ -457,7 +474,32 @@ export async function updateShipment(orderId, shopId, patch) {
   const order = db.orders.find((o) => o.id === orderId);
   const shipment = order?.shipments.find((s) => s.shopId === shopId);
   if (!shipment) throw new ApiError(404, 'Order not found');
+  if (order.payByMomo && !shipment.paid)
+    throw new ApiError(409, "Confirm the buyer's Mobile Money payment before sending this parcel");
   Object.assign(shipment, patch);
+  return copy({ ...order, shipments: [shipment] });
+}
+
+export async function paymentSent(orderId, shopId, reference) {
+  const order = db.orders.find((o) => o.id === orderId && o.buyerId === currentUser().id);
+  const shipment = order?.shipments.find((s) => s.shopId === shopId);
+  if (!shipment) throw new ApiError(404, 'Order not found');
+  if (shipment.paid) throw new ApiError(409, 'This payment has already been confirmed');
+  Object.assign(shipment, { paymentSentAt: new Date().toISOString(), paymentRef: reference || null });
+  const shop = db.shops.find((x) => x.id === shopId);
+  note(shop.ownerId, 'payment', `Payment sent for order ${orderId}`, 'Check it has arrived, then confirm it in My shop.', '/seller?tab=orders');
+  return copy(order);
+}
+
+export async function confirmPayment(orderId, shopId) {
+  if (myShop().id !== shopId) throw new ApiError(403, 'You can only update your own parcels');
+  const order = db.orders.find((o) => o.id === orderId);
+  const shipment = order?.shipments.find((s) => s.shopId === shopId);
+  if (!shipment) throw new ApiError(404, 'Order not found');
+  if (shipment.paid) throw new ApiError(409, 'This payment has already been confirmed');
+  shipment.paid = true;
+  order.paid = order.shipments.filter((s) => s.status !== 'cancelled').every((s) => s.paid);
+  note(order.buyerId, 'payment', `${myShop().name} received your payment`, `Order ${orderId}`, '/account');
   return copy({ ...order, shipments: [shipment] });
 }
 
@@ -673,7 +715,7 @@ export async function cancelShipment(orderId, shopId, reason) {
     p.stock += i.qty;
     p.sold -= i.qty;
   });
-  const refund = order.paid ? shipment.subtotal - shipment.discount + shipment.fee : 0;
+  const refund = shipment.paid || (order.paid && !order.payByMomo) ? shipment.subtotal - shipment.discount + shipment.fee : 0;
   if (refund) {
     shipment.refunded = refund;
     db.refunds.push({
@@ -1206,17 +1248,38 @@ function balanceOf(shopId) {
   const earned = parcels.reduce((n, { s, o }) => {
     const goods = s.subtotal - (s.discount ?? 0);
     const commission = Math.round(goods * 5) / 100;
-    return n + (o.paid ? goods + s.fee - commission : (s.voucherDiscount ?? 0) - commission);
+    // Only orders paid to Zed Market earn a payout of the goods; Mobile Money and cash go straight to the shop.
+    return n + (o.paid && !o.payByMomo ? goods + s.fee - commission : (s.voucherDiscount ?? 0) - commission);
   }, 0);
-  const paidOut = extra().payouts.filter((p) => p.shopId === shopId).reduce((n, p) => n + p.amount, 0);
-  return { shopId, earned, onHold: 0, refunds: 0, paidOut, parcels: parcels.length, available: earned - paidOut };
+  const sumOf = (kind) =>
+    extra()
+      .payouts.filter((p) => p.shopId === shopId && (p.kind ?? 'payout') === kind)
+      .reduce((n, p) => n + p.amount, 0);
+  const paidOut = sumOf('payout');
+  const commissionPaid = sumOf('commission');
+  const available = earned - paidOut + commissionPaid;
+  return {
+    shopId,
+    earned,
+    onHold: 0,
+    refunds: 0,
+    paidOut,
+    commissionPaid,
+    parcels: parcels.length,
+    available,
+    owed: Math.max(0, -available),
+  };
 }
 
 export const banners = async () =>
   copy(extra().banners.filter((b) => b.active).sort((a, b) => a.position - b.position));
 export async function sellerPayouts() {
   const shop = myShop();
-  return copy({ ...balanceOf(shop.id), history: extra().payouts.filter((p) => p.shopId === shop.id) });
+  return copy({
+    ...balanceOf(shop.id),
+    history: extra().payouts.filter((p) => p.shopId === shop.id),
+    payTo: db.commissionAccount ?? null,
+  });
 }
 
 Object.assign(admin, {
@@ -1269,6 +1332,32 @@ Object.assign(admin, {
     extra().payouts.unshift(p);
     note(shop.ownerId, 'payout', `Zed Market paid you K${amount}`, `Reference ${reference}`, '/seller?tab=report');
     return copy(p);
+  },
+  async commissionAccount() {
+    staff();
+    return copy(db.commissionAccount ?? null);
+  },
+  async saveCommissionAccount(body) {
+    staff();
+    db.commissionAccount = { ...body };
+    return copy(body);
+  },
+  async receiveCommission({ shopId, amount, method, reference }) {
+    staff();
+    const shop = db.shops.find((s) => s.id === shopId);
+    if (Number(amount) > balanceOf(shopId).owed) throw new ApiError(409, `${shop.name} doesn't owe that much`);
+    const p = { id: `pay_${extra().payouts.length + 1}`, kind: 'commission', shopId, shopName: shop.name, amount: Number(amount), method, reference, date: new Date().toISOString() };
+    extra().payouts.unshift(p);
+    note(shop.ownerId, 'payout', `Zed Market received your K${amount} commission`, `Reference ${reference}`, '/seller?tab=report');
+    return copy(p);
+  },
+  async remindCommission(shopId) {
+    staff();
+    const shop = db.shops.find((s) => s.id === shopId);
+    const { owed } = balanceOf(shopId);
+    if (!owed) throw new ApiError(409, `${shop.name} doesn't owe any commission`);
+    note(shop.ownerId, 'payout', `Please pay K${owed} commission`, '', '/seller?tab=report');
+    return { ok: true, owed };
   },
   async banners() {
     staff();

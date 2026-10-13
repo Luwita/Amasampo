@@ -64,7 +64,9 @@ export function Receipt() {
           <div>
             <h4>Payment</h4>
             <div>{order.payment}</div>
-            <div>{order.paid ? 'Paid' : 'To be paid on delivery'}</div>
+            <div>
+              {order.paid ? 'Paid' : order.payByMomo ? 'Waiting for Mobile Money payment' : 'To be paid on delivery'}
+            </div>
           </div>
         </section>
 
@@ -248,11 +250,10 @@ export function Statement() {
         )}
         <p className="muted small document-note">
           Commission is a percentage of the goods value after your discounts, at the rate in force when the order was
-          placed (now {Math.round(data.commissionRate * 1000) / 10}%). Delivery fees are passed to you in full. For
-          orders paid online, Zed Market pays you the goods and delivery minus commission. For cash on delivery you
-          already collected the cash, so Zed Market pays back any Zed Market voucher the buyer used, minus the
-          commission; a negative amount is commission you owe. Return refunds after delivery come off the total. Only
-          parcels marked delivered in this month are included.
+          placed (now {Math.round(data.commissionRate * 1000) / 10}%). Delivery fees are yours in full. Buyers pay
+          you directly, by Mobile Money or on delivery, so you already collected the money: Zed Market pays back any
+          Zed Market voucher the buyer used, minus the commission; a negative amount is commission you owe. Return
+          refunds after delivery come off the total. Only parcels marked delivered in this month are included.
         </p>
       </article>
     </div>

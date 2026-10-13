@@ -25,8 +25,8 @@ const app = createApp(db, {
   sms,
   uploadDir: process.env.UPLOAD_DIR ?? path.join(root, 'server', '.data', 'uploads'),
   buildDir: path.join(root, 'build'),
-  // Shows sign-in codes in the app while no SMS provider is connected. Never enabled in production.
-  exposeCodes: !production,
+  // Shows sign-in codes in the app only while no SMS provider is connected. Never enabled in production.
+  exposeCodes: !production && sms.provider === 'console',
   // Staff accounts, e.g. ADMIN_PHONES=0977123456,0966123456
   adminPhones: (process.env.ADMIN_PHONES ?? '')
     .split(',')

@@ -955,6 +955,40 @@ select:focus {
   margin: 6px 0 0;
 }
 
+/* Paying a shop by Mobile Money: where to send the money (buyer) or what to wait for (shop). */
+.pay-shop {
+  background: var(--primary-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 8px 0;
+  text-align: left;
+}
+.pay-shop p {
+  margin: 6px 0;
+}
+.pay-shop-done {
+  background: var(--green-soft);
+  color: #0f5132;
+}
+.pay-to {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 8px 0;
+}
+.pay-to dt {
+  color: var(--muted);
+}
+.pay-to dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.launch-list ul {
+  padding-left: 18px;
+}
+
 /* ---------- Order success ---------- */
 .success {
   padding: 32px;

@@ -35,7 +35,13 @@ async function api(method, url, body, token) {
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json() };
+  const out = { status: res.status, body: await res.json() };
+  // Most tests are about what happens after payment, so the shop's "payment received" is recorded at once.
+  // The payment steps themselves are tested in payments.test.js.
+  if (method === 'POST' && url === '/api/orders' && out.status === 201 && body.payment === 'momo') {
+    await db.query('UPDATE shipments SET paid_at = now() WHERE order_id = $1', [out.body.id]);
+  }
+  return out;
 }
 
 // Signs in through the SMS code flow, reading the code from the fake SMS sender.
@@ -57,7 +63,7 @@ const shopBody = {
   province: 'copperbelt',
   town: 'Kitwe',
   area: 'Chisokone Market',
-  couriers: ['pickup', 'yango', 'bus'],
+  momoNetwork: 'mtn', momoNumber: '0966555000', momoName: 'Shop Owner', couriers: ['pickup', 'yango', 'bus'],
 };
 
 describe('sign-in', () => {
@@ -166,7 +172,7 @@ describe('shops, products and orders', () => {
           address: 'Plot 5',
         },
         couriers: { [seller.shopId]: 'yango' },
-        payment: 'mtn',
+        payment: 'momo',
       },
       buyer.token,
     );
@@ -188,7 +194,7 @@ describe('shops, products and orders', () => {
     const tooMany = await api(
       'POST',
       '/api/orders',
-      { ...base, items: [{ productId, qty: 3 }], couriers: { [seller.shopId]: 'bus' }, payment: 'mtn' },
+      { ...base, items: [{ productId, qty: 3 }], couriers: { [seller.shopId]: 'bus' }, payment: 'momo' },
       buyer.token,
     );
     assert.equal(tooMany.status, 409);
@@ -197,7 +203,7 @@ describe('shops, products and orders', () => {
     const yangoAcrossProvinces = await api(
       'POST',
       '/api/orders',
-      { ...base, items: [{ productId, qty: 1 }], couriers: { [seller.shopId]: 'yango' }, payment: 'mtn' },
+      { ...base, items: [{ productId, qty: 1 }], couriers: { [seller.shopId]: 'yango' }, payment: 'momo' },
       buyer.token,
     );
     assert.equal(yangoAcrossProvinces.status, 409);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from './app.js';
 import { createDb, migrate } from './db.js';
-import { africasTalkingSms, consoleSms, smsFromEnv } from './sms.js';
+import { africasTalkingSms, androidGatewaySms, consoleSms, smsFromEnv } from './sms.js';
 
 // A stand-in for fetch that records the request and answers like Africa's Talking.
 function fakeFetch(reply) {
@@ -50,6 +50,35 @@ describe("Africa's Talking SMS", () => {
       const sms = africasTalkingSms({ username: 'zedmarket', apiKey: 'k', fetchImpl: fakeFetch(reply) });
       await assert.rejects(sms.send('977123456', 'Hi'), (err) => err.status === 502 && /couldn't send the SMS/.test(err.message));
     }
+  });
+
+  test('an Android phone can send the texts while testing', async () => {
+    const calls = [];
+    const sms = androidGatewaySms({
+      username: 'ABC123',
+      password: 'secret',
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return new Response(JSON.stringify({ id: 'msg_1', state: 'Pending' }), { status: 202 });
+      },
+    });
+    assert.deepEqual(await sms.send('977123456', 'Your Zed Market code is 123456.'), { id: 'msg_1', state: 'Pending' });
+    assert.equal(calls[0].url, 'https://api.sms-gate.app/3rdparty/v1/messages');
+    assert.equal(calls[0].init.headers.Authorization, `Basic ${Buffer.from('ABC123:secret').toString('base64')}`);
+    assert.deepEqual(JSON.parse(calls[0].init.body), {
+      textMessage: { text: 'Your Zed Market code is 123456.' },
+      phoneNumbers: ['+260977123456'],
+    });
+
+    const refused = androidGatewaySms({
+      username: 'a',
+      password: 'b',
+      fetchImpl: async () => new Response('Unauthorized', { status: 401 }),
+    });
+    await assert.rejects(refused.send('977123456', 'Hi'), (err) => err.status === 502);
+
+    const env = { SMS_GATEWAY_USER: 'a', SMS_GATEWAY_PASS: 'b', AT_USERNAME: 'live', AT_API_KEY: 'k' };
+    assert.equal(smsFromEnv(env).provider, 'Android phone gateway', 'the phone wins while its settings are present');
   });
 
   test('server/.env decides the provider', () => {

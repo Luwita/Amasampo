@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import * as api from '../api';
 import { CancelParcel, RETURN_DAYS, ReportProblem } from '../components/Cases';
 import { BuyerPriceRequests } from '../components/PriceRequests';
+import PayShop from '../components/PayShop';
 import ProductCard from '../components/ProductCard';
 import ShareButton from '../components/ShareButton';
 import ShipmentStatus from '../components/ShipmentStatus';
@@ -76,7 +77,15 @@ const roleLabel = { business: 'Business buyer', seller: 'Shop owner', buyer: 'Sh
 // What a buyer can do with a parcel: cancel before it is sent, or report a problem afterwards.
 function ParcelActions({ order, shipment }) {
   if (shipment.status === 'pending') {
-    return <CancelParcel orderId={order.id} shopId={shipment.shopId} role="buyer" paid={order.paid} />;
+    return (
+      <CancelParcel
+        orderId={order.id}
+        shopId={shipment.shopId}
+        role="buyer"
+        paid={shipment.paid}
+        sent={!!shipment.paymentSentAt}
+      />
+    );
   }
   const activeCase = shipment.latestCase && ['open', 'rejected', 'escalated'].includes(shipment.latestCase.status);
   const inWindow =
@@ -349,6 +358,7 @@ export default function Account() {
                         />
                       ))}
                     </ul>
+                    <PayShop order={o} shipment={s} />
                     <ShipmentStatus shipment={s} />
                     {s.pickupPoint && <p className="small muted">📮 Collect from {s.pickupPoint}</p>}
                     <ParcelActions order={o} shipment={s} />

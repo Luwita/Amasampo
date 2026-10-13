@@ -439,6 +439,10 @@ export function StoreProvider({ children }) {
         const updated = await api.updateShipment(orderId, shopId, patch);
         setShopOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
       },
+      async confirmPayment(orderId, shopId) {
+        const updated = await api.confirmPayment(orderId, shopId);
+        setShopOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+      },
 
       // ----- Reviews -----
       async reviewItem(review) {

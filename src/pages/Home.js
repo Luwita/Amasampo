@@ -37,7 +37,7 @@ const standardSlides = [
 
 const promises = [
   { icon: '🇿🇲', title: 'Local shops', text: 'Verified sellers in all 10 provinces' },
-  { icon: '🔒', title: 'Safe payment', text: 'Money held until you confirm delivery' },
+  { icon: '📲', title: 'Pay your way', text: 'Mobile Money to the shop, or cash on delivery' },
   { icon: '🛵', title: 'Zambian couriers', text: 'Yango, Platinum, bus parcel, Zampost' },
   { icon: '🤝', title: '1-on-1 seller support', text: 'Help to list products and start selling' },
 ];

@@ -97,6 +97,9 @@ export function priceOrder({
     if (payment === 'cod' && !q.courier.cod) {
       throw new OrderError(`Pay on Delivery isn't available with ${q.courier.name}`);
     }
+    if (payment === 'momo' && !shop.takesMomo) {
+      throw new OrderError(`${shop.name} hasn't added a Mobile Money number yet. Choose Pay on Delivery, or remove its items`);
+    }
     let point = null;
     if (q.courier.id === 'point') {
       point = getPickupPoint(pickupPoint);

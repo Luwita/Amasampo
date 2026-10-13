@@ -1,6 +1,7 @@
 // Database helpers shared by several route files.
 import { categories } from '../src/data/catalog.js';
 import { expandSearch } from '../src/data/search.js';
+import { formatK } from '../src/utils/format.js';
 import { HttpError, newId } from './http.js';
 import { notify, notifyShopOwner } from './notify.js';
 import { toOrder, toProduct } from './mappers.js';
@@ -21,6 +22,7 @@ export async function loadOrders(db, orderRows, shopId = null) {
   const shipments = await db.query(
     `SELECT s.*, sh.name AS shop_name, sh.province AS shop_province, sh.town AS shop_town, sh.area AS shop_area, sh.phone AS shop_phone,
             sh.tpin AS shop_tpin, sh.vat_registered AS shop_vat_registered,
+            sh.momo_network AS shop_momo_network, sh.momo_number AS shop_momo_number, sh.momo_name AS shop_momo_name,
             (SELECT json_build_object('id', c.id, 'status', c.status, 'kind', c.kind, 'resolution', c.resolution)
                FROM cases c WHERE c.shipment_id = s.id ORDER BY c.created_at DESC LIMIT 1) AS latest_case,
             (SELECT COALESCE(sum(r.amount), 0) FROM refunds r WHERE r.shipment_id = s.id) AS refunded,
@@ -175,7 +177,8 @@ export async function refreshRatings(q, productId, shopId) {
 // if the buyer had paid. `by` is 'buyer', 'seller' or 'admin'; staff can also cancel parcels already sent.
 export async function cancelShipment(t, orderId, shopId, by, reason) {
   const [s] = await t.query(
-    `SELECT s.*, o.payment_status, o.buyer_id FROM shipments s JOIN orders o ON o.id = s.order_id
+    `SELECT s.*, o.payment_status, o.buyer_id, o.buyer_name, o.buyer_phone
+       FROM shipments s JOIN orders o ON o.id = s.order_id
       WHERE s.order_id = $1 AND s.shop_id = $2 FOR UPDATE OF s`,
     [orderId, shopId],
   );
@@ -233,7 +236,7 @@ export async function cancelShipment(t, orderId, shopId, by, reason) {
   else await notify(t, s.buyer_id, message);
 
   let refund = 0;
-  if (s.payment_status === 'paid') {
+  if (s.payment_status === 'paid' || s.paid_at) {
     refund = Number(s.subtotal) - Number(s.discount) - Number(s.voucher_discount ?? 0) + Number(s.fee);
     if (refund > 0) {
       await t.query(
@@ -241,6 +244,15 @@ export async function cancelShipment(t, orderId, shopId, by, reason) {
          VALUES ($1, $2, $3, $4, $5, 'cancelled', $6)`,
         [newId('rfd'), orderId, s.id, s.shop_id, s.buyer_id, refund],
       );
+      // The buyer paid the shop's Mobile Money number, so the shop is the one holding the money.
+      if (s.paid_at) {
+        await notifyShopOwner(t, s.shop_id, {
+          kind: 'refund',
+          title: `Send ${formatK(refund)} back for order ${orderId}`,
+          body: `The parcel was cancelled after ${s.buyer_name} paid you. Refund ${s.buyer_phone} by Mobile Money, then send the transaction ID to Zed Market support.`,
+          link: '/seller?tab=orders',
+        });
+      }
     }
   }
   return { refund };

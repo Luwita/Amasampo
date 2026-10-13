@@ -26,8 +26,50 @@ function Overview({ go }) {
       {sub && <small>{sub}</small>}
     </button>
   );
+  const todo = s.setup
+    ? [
+        s.setup.sms !== 'live' && [
+          s.setup.sms === 'phone'
+            ? 'SMS is sent from your own Android phone, which is for testing only. Put the live AT_USERNAME and AT_API_KEY in server/.env and remove the SMS_GATEWAY lines.'
+            : s.setup.sms === 'sandbox'
+            ? "SMS is on the Africa's Talking sandbox: no real texts are sent. Put the live AT_USERNAME and AT_API_KEY in server/.env."
+            : 'SMS is not connected: sign-in codes and order texts are not sent. Put AT_USERNAME and AT_API_KEY in server/.env.',
+        ],
+        !s.setup.commissionSet && ['Set your commission rate.', 'settings'],
+        s.setup.commissionAccountSet === false && [
+          'Add the Mobile Money number shops send their commission to.',
+          'payouts',
+        ],
+        s.setup.couriersUnconfirmed.length > 0 && [
+          `Enter the rates you agreed with ${s.setup.couriersUnconfirmed.join(', ')}.`,
+          'delivery',
+        ],
+        !s.setup.pointsConfirmed && ['Add your real Zed Market Points (buyers are offered none until you do).', 'delivery'],
+        s.setup.shopsWithoutMomo > 0 && [
+          `${s.setup.shopsWithoutMomo} shop${s.setup.shopsWithoutMomo > 1 ? 's have' : ' has'} no Mobile Money number, so buyers can only pay on delivery there.`,
+          'shops',
+        ],
+      ].filter(Boolean)
+    : [];
   return (
     <>
+      {todo.length > 0 && (
+        <section className="card alert-bar launch-list" role="status">
+          <strong>Before you launch</strong>
+          <ul>
+            {todo.map(([text, tab]) => (
+              <li key={text}>
+                {text}{' '}
+                {tab && (
+                  <button className="link-btn" onClick={() => go(tab)}>
+                    Open
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <h3>Needs attention</h3>
       <div className="tiles">
         {tile('Disputes to decide', s.escalatedCases, `${s.openCases} waiting for shops`, 'cases')}
@@ -36,6 +78,7 @@ function Overview({ go }) {
         {tile('Late parcels', s.lateDispatch, 'not sent after 2 days', 'orders')}
         {tile('Questions to answer', s.supportWaiting, 'customers waiting for a reply', 'support')}
         {tile('Shops to pay', s.payoutsReady, formatK(s.payoutsReadyAmount), 'payouts')}
+        {tile('Commission to collect', formatK(s.commissionOwed ?? 0), `${s.commissionOwedShops ?? 0} shops owe it`, 'payouts')}
       </div>
       <h3>Last 7 days</h3>
       <div className="tiles">
@@ -328,7 +371,8 @@ function Orders() {
             <div className="order-head">
               <strong>{o.id}</strong>
               <span className="muted small">
-                {date(o.date)} · {o.buyer.name} {o.buyer.phone} · {o.payment} · {o.paid ? 'paid' : 'pay on delivery'}
+                {date(o.date)} · {o.buyer.name} {o.buyer.phone} · {o.payment} ·{' '}
+                {o.paid ? 'paid' : o.payByMomo ? 'waiting for payment' : 'pay on delivery'}
               </span>
               <strong>{formatK(o.total)}</strong>
             </div>
@@ -453,8 +497,8 @@ function Refunds() {
         </select>
       </div>
       <p className="muted small">
-        Refunds are paid by hand until Mobile Money payouts are connected: send the money, then record the transaction
-        reference.
+        Buyers pay shops directly (Mobile Money or cash), so the shop holds the money: ask the shop to send it back to
+        the buyer, then record the transaction reference here. Refunds marked "Zed Market pays" are sent by you.
       </p>
       <div className="table-wrap">
         <table className="table">
@@ -474,6 +518,9 @@ function Refunds() {
                   {r.buyerName}
                   <div className="small muted">
                     {r.buyerPhone} · paid by {r.paymentMethod}
+                  </div>
+                  <div className="small muted">
+                    {r.heldByShop ? `Money is with the shop (${r.shopPhone})` : 'Zed Market pays'}
                   </div>
                 </td>
                 <td>

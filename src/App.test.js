@@ -48,6 +48,12 @@ test('signing up as a shop owner with an SMS code leads to shop setup, then uplo
   expect(await screen.findByText('Enter your NRC number like 123456/78/1')).toBeInTheDocument();
   type('NRC number', '123456/78/1');
   fireEvent.click(screen.getByRole('button', { name: 'Send my application' }));
+  // Every shop gives the Mobile Money number buyers pay to.
+  expect(await screen.findByText('Enter your Mobile Money number')).toBeInTheDocument();
+  type('Mobile Money network', 'airtel');
+  type('Mobile Money number', '0977 123 456');
+  type('Name the number is registered in', 'Mwansa Banda');
+  fireEvent.click(screen.getByRole('button', { name: 'Send my application' }));
 
   expect(await screen.findByRole('heading', { name: 'Upload a product' })).toBeInTheDocument();
   type('Product name', 'Hoe Handle (Mukwa)');
@@ -141,15 +147,26 @@ test('buyer checks out with a courier and the shop owner dispatches the order', 
   const buyer = renderAt('/checkout');
   expect(await screen.findByLabelText(/Yango Delivery/)).toBeChecked(); // cheapest door delivery is preselected
   type('Street address or landmark', 'Plot 5, Riverside');
-  fireEvent.click(screen.getByRole('button', { name: /Pay K285/ })); // 2 × K120 + K45 Yango
-  expect(await screen.findByText(/Your order is confirmed/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Place order · K285/ })); // 2 × K120 + K45 Yango
+  // Mobile Money goes to the shop's own number; the buyer then says the money was sent.
+  expect(await screen.findByText(/One more step: pay the shop/)).toBeInTheDocument();
+  expect(screen.getByText('Send K285 to Bupe Electronics')).toBeInTheDocument();
+  expect(screen.getByText('0966111222')).toBeInTheDocument();
   expect(api.__db().products.find((p) => p.id === 'prd_charger').stock).toBe(8);
+  type('Transaction ID for Bupe Electronics', 'MP261013.0915');
+  fireEvent.click(screen.getByRole('button', { name: "I've paid" }));
+  expect(await screen.findByText(/You told Bupe Electronics you sent K285/)).toBeInTheDocument();
   buyer.unmount();
 
   // The shop owner signs in on their own device and dispatches.
   api.setToken(sellerToken);
   renderAt('/seller?tab=orders');
   expect(await screen.findByText(/2 × Phone Charger/)).toBeInTheDocument();
+  // The parcel can only be sent once the shop has confirmed the money arrived.
+  expect(screen.getByText(/says the money was sent, transaction ID MP261013.0915/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Hand over to Yango Delivery' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Payment received' }));
+  expect(await screen.findByText(/Paid to your Mobile Money/)).toBeInTheDocument();
   type('Tracking number', 'YG-4471');
   fireEvent.click(screen.getByRole('button', { name: 'Hand over to Yango Delivery' }));
   expect(await screen.findByText('YG-4471')).toBeInTheDocument();
@@ -189,7 +206,7 @@ test('buyers can rate an item after delivery, once', async () => {
     items: [{ productId: 'p10', qty: 1 }],
     shipping: { name: 'Chanda', phone: '0977000111', province: 'lusaka', town: 'Lusaka', address: 'Plot 1' },
     couriers: { s2: 'pickup' },
-    payment: 'mtn',
+    payment: 'momo',
   });
   api.__db().orders[0].shipments[0].status = 'delivered';
 
