@@ -11,9 +11,11 @@ export default function Login() {
   const [params] = useSearchParams();
   const next = params.get('next');
   const ref = params.get('ref') ?? '';
-  const [mode, setMode] = useState(ref ? 'register' : 'login');
+  // Sign-up links and QR codes: ?join=seller (shop owners) or ?join=buyer (customers).
+  const join = params.get('join');
+  const [mode, setMode] = useState(ref || join ? 'register' : 'login');
   const [step, setStep] = useState('phone');
-  const [form, setForm] = useState({ name: '', phone: '', code: '', accountType: 'buyer', referralCode: ref.toUpperCase() });
+  const [form, setForm] = useState({ name: '', phone: '', code: '', accountType: join === 'seller' ? 'seller' : 'buyer', referralCode: ref.toUpperCase() });
   const [devCode, setDevCode] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);

@@ -223,6 +223,9 @@ shop (a shop owner who joins the team needs a different phone number).
   stays on hold for 7 days after delivery and while a return is open. Staff record each Mobile Money or bank payout
   with its reference (never more than is available); the shop is notified and sees its balance and history under
   Report in the seller dashboard.
+- **QR codes**: sign-up codes for shop owners (`/login?join=seller`, leads on to shop setup) and customers
+  (`/login?join=buyer`), with a printable poster to download and WhatsApp sharing. Ready-made images are in
+  [qr-codes/](qr-codes/).
 - **Marketing**: home page banners (shown before the standard slides, with an end date), voucher campaigns paid
   for by Zed Market (everyone, shoppers, shop owners, one province or one phone number; group sends need a second
   click), and announcements to the 🔔 bell.
@@ -257,15 +260,19 @@ collected (uploaded files are reachable by URL).
 
 ## Delivery options ([src/data/couriers.js](src/data/couriers.js))
 
+Yango (and the shop's own rider) deliver to the buyer's door. Parcels sent with Platinum, a bus or Zampost wait at
+the courier's office in the buyer's town (Platinum office, bus station or post office), where the buyer collects them
+with the order number and ID; checkout, the order page and the "on its way" text say where.
+
 | Option | Same town | Same province | Other province |
 | --- | --- | --- | --- |
 | Collect from shop | ✓ | ✓ | ✓ |
-| Shop's own delivery (shop sets its own fees) | ✓ | ✓ | |
-| Yango Delivery (listed towns only) | ✓ | | |
-| Platinum Couriers | ✓ | ✓ | ✓ |
-| Intercity bus parcel | | ✓ | ✓ |
-| Zampost EMS | ✓ | ✓ | ✓ |
-| Zed Market Point (towns with a point) | ✓ | ✓ | ✓ |
+| Shop's own delivery to the door (shop sets its own fees) | ✓ | ✓ | |
+| Yango Delivery to the door (listed towns only) | ✓ | | |
+| Platinum Couriers, collect at their office | ✓ | ✓ | ✓ |
+| Intercity bus parcel, collect at the bus station | | ✓ | ✓ |
+| Zampost EMS, collect at the post office | ✓ | ✓ | ✓ |
+| Zed Market Point (off until staff switch it on in Admin → Delivery) | ✓ | ✓ | ✓ |
 
 Base fees cover a parcel up to 5 kg; heavier parcels pay a per-kg rate, and couriers with a weight limit
 (e.g. Yango 20 kg, Zampost 30 kg) are not offered for heavier parcels. Every product has a weight per unit.

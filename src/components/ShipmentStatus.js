@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { getCourier } from '../data/couriers';
+import { collectPlace, getCourier } from '../data/couriers';
 import { formatK } from '../utils/format';
 
 const STEPS = [
@@ -21,7 +21,11 @@ export const statusLabel = (shipment) => {
   const pickup = shipment.courier === 'pickup';
   if (shipment.status === 'cancelled') return 'Cancelled';
   if (shipment.status === 'delivered') return pickup ? 'Collected' : 'Delivered';
-  if (shipment.status === 'dispatched') return pickup ? 'Ready for collection' : `Sent with ${shipment.courierName}`;
+  if (shipment.status === 'dispatched') {
+    if (pickup) return 'Ready for collection';
+    const office = collectPlace(shipment.courier);
+    return office ? `Sent to the ${office}` : `Sent with ${shipment.courierName}`;
+  }
   return pickup ? 'Being prepared' : 'Awaiting dispatch';
 };
 
@@ -66,6 +70,7 @@ export default function ShipmentStatus({ shipment, viewer = 'buyer' }) {
       </div>
       <div className="small muted">
         {courier?.icon} {shipment.courierName} · {shipment.eta}
+        {courier?.collect && ` · collect from the ${courier.collect} with your order number and ID`}
         {shipment.tracking && (
           <>
             {' '}

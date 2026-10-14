@@ -100,7 +100,13 @@ describe('delivery choices', () => {
     assert.equal(res.status, 409, 'Yango is not one of this shop’s options');
   });
 
+  test('Zed Market Points are off until staff switch them on', async () => {
+    const off = await order({ couriers: { [seller.shopId]: 'point' }, pickupPoint: 'lsk-cairo' });
+    assert.equal(off.status, 409);
+  });
+
   test('Zed Market Points: any shop can send to a collection point in the buyer’s town', async () => {
+    await enablePoints();
     const noPoint = await order({ couriers: { [seller.shopId]: 'point' } });
     assert.equal(noPoint.status, 409);
     assert.match(noPoint.body.error, /Zed Market Point in Lusaka/);
@@ -121,6 +127,13 @@ describe('delivery choices', () => {
     assert.equal(mongu.body.delivery, 90);
   });
 });
+
+// Zed Market Points are off until staff switch them on; these tests are about how they work once on.
+const enablePoints = () =>
+  db.query(
+    `INSERT INTO delivery_config (key, value) VALUES ('couriers', '{"point": {"disabled": false}}')
+     ON CONFLICT (key) DO UPDATE SET value = delivery_config.value || EXCLUDED.value`,
+  );
 
 describe('notifications', () => {
   test('new orders reach the shop; dispatch reaches the buyer; counts and read state work', async () => {

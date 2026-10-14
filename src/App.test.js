@@ -249,3 +249,9 @@ test.each([
   await waitFor(() => expect(document.querySelector('.status-bar')).not.toBeInTheDocument());
   expect(document.querySelector('main').textContent.length).toBeGreaterThan(10);
 });
+
+test('the shop owners QR code opens sign-up ready for a shop owner', async () => {
+  renderAt('/login?join=seller');
+  expect(await screen.findByLabelText('I am a')).toHaveValue('seller');
+  expect(screen.getByLabelText('Full name')).toBeInTheDocument(); // the sign-up form, not sign-in
+});

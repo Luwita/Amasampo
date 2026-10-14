@@ -36,5 +36,6 @@ test('heavier parcels pay per extra kg and couriers refuse loads over their limi
   expect(quote('platinum', lusaka, here, 5.2).fee).toBe(63); // rounds up to 1 extra kg × K3
   expect(quote('yango', lusaka, here, 20)).not.toBeNull();
   expect(quote('yango', lusaka, here, 21)).toBeNull(); // over Yango's 20 kg limit
-  expect(quotesFor(lusaka, here, 40).map((q) => q.courier.id)).toEqual(['point', 'platinum']);
+  // Zed Market Points are off by default, so only Platinum takes 40 kg here.
+  expect(quotesFor(lusaka, here, 40).map((q) => q.courier.id)).toEqual(['platinum']);
 });

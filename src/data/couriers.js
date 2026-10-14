@@ -34,7 +34,7 @@ export const couriers = [
     id: 'yango',
     name: 'Yango Delivery',
     icon: '🟡',
-    description: 'On-demand courier for deliveries within the same town.',
+    description: 'Delivered to your door by a Yango rider within the same town.',
     rates: { town: 45 },
     perKg: { town: 5 },
     maxKg: 20, // motorbike and car deliveries
@@ -47,7 +47,8 @@ export const couriers = [
     id: 'platinum',
     name: 'Platinum Couriers',
     icon: '📦',
-    description: 'Door-to-door parcel delivery between towns and provinces.',
+    description: 'Collect your parcel from the Platinum Couriers office in your town.',
+    collect: 'Platinum Couriers office',
     rates: { town: 60, province: 95, national: 160 },
     perKg: { town: 3, province: 5, national: 8 },
     maxKg: 100,
@@ -58,7 +59,8 @@ export const couriers = [
     id: 'bus',
     name: 'Intercity bus parcel',
     icon: '🚌',
-    description: 'Sent with intercity bus parcel services; buyer collects at the bus station.',
+    description: 'Sent with an intercity bus; collect your parcel from the bus station in your town.',
+    collect: 'bus station',
     rates: { province: 60, national: 90 },
     perKg: { province: 2, national: 3 },
     maxKg: 300,
@@ -69,7 +71,8 @@ export const couriers = [
     id: 'zampost',
     name: 'Zampost EMS',
     icon: '✉️',
-    description: 'National postal courier reaching every district post office.',
+    description: 'Collect your parcel from the post office in your town (every district has one).',
+    collect: 'post office',
     rates: { town: 50, province: 75, national: 120 },
     perKg: { town: 4, province: 6, national: 9 },
     maxKg: 30,
@@ -88,6 +91,8 @@ export const couriers = [
     eta: { town: 'Next day', province: '1–3 days', national: '2–5 days' },
     cod: true,
     network: true,
+    // Off until Zed Market has real collection points; staff switch it on in Admin → Delivery.
+    disabled: true,
   },
 ];
 
@@ -155,6 +160,9 @@ export function quotesFor(shop, to, weightKg = 1) {
 // Cheapest option that actually brings the parcel to the buyer (excludes collecting from the shop).
 export const bestDelivery = (shop, to, weightKg = 1) =>
   quotesFor(shop, to, weightKg).find((q) => q.courier.id !== 'pickup') ?? null;
+
+// Where the buyer collects a parcel, for couriers that don't deliver to the door (e.g. "post office"), or null.
+export const collectPlace = (courierId) => getCourier(courierId)?.collect ?? null;
 
 // Couriers that can't take a parcel this heavy, for explaining missing options.
 export const tooHeavyFor = (shop, weightKg) =>

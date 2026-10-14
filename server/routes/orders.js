@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { momoNetworkName } from '../../src/data/catalog.js';
+import { collectPlace } from '../../src/data/couriers.js';
 import { OrderError, priceOrder } from '../../src/data/pricing.js';
 import { requireUser } from '../auth.js';
 import { HttpError, newId, newOrderId, parse } from '../http.js';
@@ -373,6 +374,8 @@ export async function advanceShipment(db, orderId, shop, body) {
       [orderId, shop.id, body.status, body.tracking ?? null]
     );
     const pickupHere = s.courier === 'pickup';
+    const office = collectPlace(s.courier);
+    const [{ town }] = await t.query('SELECT town FROM orders WHERE id = $1', [orderId]);
     await notifyBuyerOfOrder(t, orderId, {
       kind: 'order',
       title:
@@ -382,11 +385,20 @@ export async function advanceShipment(db, orderId, shop, body) {
             ? `Ready to collect at ${shop.name}`
             : s.courier === 'point'
               ? `On its way to your Zed Market Point`
-              : `On its way: your order from ${shop.name}`,
+              : office
+                ? `On its way to the ${office} in ${town}`
+                : `On its way: your order from ${shop.name}`,
       body:
         body.status === 'delivered'
           ? 'Happy with it? Rate your items. Something wrong? You can report a problem within 7 days.'
-          : [s.courier_name, s.tracking && `tracking ${s.tracking}`, s.pickup_point].filter(Boolean).join(' · '),
+          : [
+              s.courier_name,
+              s.tracking && `tracking ${s.tracking}`,
+              s.pickup_point,
+              office && `Collect it with order number ${orderId} and your ID`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
       link: '/account',
     });
     if (body.status === 'delivered') await rewardInviter(t, orderId);

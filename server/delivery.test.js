@@ -104,6 +104,13 @@ after(async () => {
   await rm(uploadDir, { recursive: true, force: true });
 });
 
+// Zed Market Points are off until staff switch them on; these tests are about how they work once on.
+const enablePoints = () =>
+  db.query(
+    `INSERT INTO delivery_config (key, value) VALUES ('couriers', '{"point": {"disabled": false}}')
+     ON CONFLICT (key) DO UPDATE SET value = delivery_config.value || EXCLUDED.value`,
+  );
+
 describe('delivery settings', () => {
   test('until staff save real rates, the starting values are marked as not confirmed', async () => {
     const d = (await api('GET', '/api/delivery')).body;
@@ -165,6 +172,7 @@ describe('delivery settings', () => {
   });
 
   test('owners replace the example Zed Market Points with real ones', async () => {
+    await enablePoints();
     const point = {
       id: 'kitwe-chisokone',
       province: 'copperbelt',
@@ -186,5 +194,22 @@ describe('delivery settings', () => {
     assert.equal(ok.status, 200);
     assert.match(ok.body.shipments[0].pickupPoint, /Chisokone Market/);
     assert.equal((await quote('point', kitwe, { pickupPoint: 'kitwe-closed' })).status, 409, 'closed points cannot be used');
+  });
+});
+
+describe('collecting from the courier office', () => {
+  test('a parcel sent with Platinum tells the buyer to collect it at the Platinum office in their town', async () => {
+    const placed = await api(
+      'POST',
+      '/api/orders',
+      { items: [{ productId: fanId, qty: 1 }], shipping: lusaka, couriers: { [seller.shopId]: 'platinum' }, payment: 'momo' },
+      buyer.token,
+    );
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const url = `/api/orders/${placed.body.id}/shipments/${seller.shopId}`;
+    assert.equal((await api('PATCH', url, { status: 'dispatched', tracking: 'PC123' }, seller.token)).status, 200);
+    const [note] = (await api('GET', '/api/notifications', undefined, buyer.token)).body;
+    assert.equal(note.title, 'On its way to the Platinum Couriers office in Lusaka');
+    assert.match(note.body, /tracking PC123 · Collect it with order number ZM-\w+ and your ID/);
   });
 });

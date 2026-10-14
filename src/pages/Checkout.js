@@ -249,7 +249,13 @@ export default function Checkout() {
                         <span className="grow">
                           <strong>{o.courier.name}</strong>
                           <span className="muted small block">
-                            {o.courier.id === 'pickup' ? `Collect in ${s.shop.town}` : o.eta}
+                            {o.courier.id === 'pickup'
+                              ? `Collect in ${s.shop.town}`
+                              : o.courier.collect
+                                ? `Collect from the ${o.courier.collect} in ${form.town} · ${o.eta}`
+                                : o.courier.id === 'yango' || o.courier.id === 'seller'
+                                  ? `To your door · ${o.eta}`
+                                  : o.eta}
                           </span>
                         </span>
                         <strong>{o.fee ? formatK(o.fee) : 'Free'}</strong>

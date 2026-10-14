@@ -116,6 +116,23 @@
   margin: 6px 0 0;
 }
 
+/* Sign-up QR codes */
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.qr-image svg {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  margin: 8px auto;
+}
+.qr-card a.link {
+  overflow-wrap: anywhere;
+}
+
 /* Admin panel */
 .admin h3 {
   margin-top: 18px;

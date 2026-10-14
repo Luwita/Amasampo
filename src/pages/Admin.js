@@ -5,6 +5,7 @@ import { ReasonButton, SearchBox, date, useAdminList } from '../components/admin
 import { Analytics, Marketing, Payouts, RequestModeration } from '../components/AdminTools';
 import { EditProduct, EditShop, ParcelControls, Settings, Staff } from '../components/AdminControl';
 import { DeliverySettings } from '../components/AdminDelivery';
+import { QrCodes } from '../components/AdminQr';
 import { CASE_STATUS } from '../components/ShipmentStatus';
 import { useStore } from '../context/StoreContext';
 import { formatLocation } from '../data/zambia';
@@ -713,6 +714,7 @@ const TABS = [
   ['refunds', 'Refunds', Refunds],
   ['payouts', 'Payouts', Payouts],
   ['marketing', 'Marketing', Marketing],
+  ['qr', 'QR codes', QrCodes],
   ['requests', 'Buying requests', RequestModeration],
   ['support', 'Support', Support],
   ['staff', 'Staff', Staff],
