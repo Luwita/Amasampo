@@ -99,20 +99,25 @@ export function authRoutes(db, { sms = consoleSms, exposeCodes = false, adminPho
        ON CONFLICT (phone) DO UPDATE SET code_hash = $2, expires_at = EXCLUDED.expires_at, attempts = 0, sent_at = now()`,
       [phone, sha256(`${phone}:${code}`), CODE_TTL_MIN],
     );
+    // Staff and owner codes are never shown on screen, even in test mode: whoever has them runs the marketplace.
+    // In test mode they are written in the server log instead (Render: the Logs tab).
+    const [staffUser] = await db.query('SELECT 1 FROM users WHERE phone = $1 AND is_staff AND deleted_at IS NULL', [phone]);
+    const showCode = exposeCodes && !admins.has(phone) && !staffUser;
+    if (exposeCodes && !showCode) console.log(`[auth] staff sign-in code for 0${phone}: ${code}`);
     try {
       await sms.send(phone, `Your Zed Market code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`);
     } catch (err) {
-      // In development the code is shown on screen anyway, so a broken SMS setup doesn't block signing in.
+      // In test mode a failed SMS (e.g. no Africa's Talking balance) doesn't block signing in.
       if (exposeCodes) {
-        console.error(`[sms] not sent (development: the code is shown on the sign-in screen): ${err.message}`);
-        return res.json({ sent: false, devCode: code });
+        console.error(`[sms] not sent (test mode: ${showCode ? 'the code is shown on screen' : 'see the code above'}): ${err.message}`);
+        return res.json({ sent: false, ...(showCode ? { devCode: code } : {}) });
       }
       // Nothing was sent, so don't make the person wait before trying again.
       await db.query('DELETE FROM otp_codes WHERE phone = $1', [phone]);
       throw err;
     }
     // Without an SMS provider the code is only printed in the server window.
-    res.json({ sent: sms.provider !== 'console', ...(exposeCodes ? { devCode: code } : {}) });
+    res.json({ sent: sms.provider !== 'console', ...(showCode ? { devCode: code } : {}) });
   });
 
   router.post('/verify', async (req, res) => {

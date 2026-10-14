@@ -17,6 +17,7 @@ export default function Login() {
   const [step, setStep] = useState('phone');
   const [form, setForm] = useState({ name: '', phone: '', code: '', accountType: join === 'seller' ? 'seller' : 'buyer', referralCode: ref.toUpperCase() });
   const [devCode, setDevCode] = useState(null);
+  const [smsSent, setSmsSent] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -41,6 +42,7 @@ export default function Login() {
     run(async () => {
       const res = await requestCode(form.phone);
       setDevCode(res.devCode ?? null);
+      setSmsSent(res.sent !== false);
       setStep('code');
     });
   };
@@ -127,7 +129,7 @@ export default function Login() {
             </p>
             {devCode && (
               <p className="dev-note">
-                Test mode (no SMS provider connected). Your code is <strong>{devCode}</strong>
+                Test mode{smsSent ? '' : ': no SMS was sent'}. Your code is <strong>{devCode}</strong>
               </p>
             )}
             <div className="field">

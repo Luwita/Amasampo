@@ -36,6 +36,9 @@ function Overview({ go }) {
             ? "SMS is on the Africa's Talking sandbox: no real texts are sent. Put the live AT_USERNAME and AT_API_KEY in server/.env."
             : 'SMS is not connected: sign-in codes and order texts are not sent. Put AT_USERNAME and AT_API_KEY in server/.env.',
         ],
+        s.setup.signInCodesShown && [
+          'Test mode: sign-in codes are shown on screen, so anyone can sign in to any customer or shop account. Remove SHOW_SIGNIN_CODES from the server settings before real customers use the site.',
+        ],
         !s.setup.commissionSet && ['Set your commission rate.', 'settings'],
         s.setup.commissionAccountSet === false && [
           'Add the Mobile Money number shops send their commission to.',

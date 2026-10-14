@@ -40,8 +40,9 @@ const app = createApp(db, {
   sms,
   uploadDir: process.env.UPLOAD_DIR ?? path.join(root, 'server', '.data', 'uploads'),
   buildDir: path.join(root, 'build'),
-  // Shows sign-in codes in the app only while no SMS provider is connected. Never enabled in production.
-  exposeCodes: !production && sms.provider === 'console',
+  // Shows sign-in codes on the sign-in screen: on a development computer without an SMS provider, or anywhere
+  // with SHOW_SIGNIN_CODES=1 (testing before SMS is paid for). Staff codes are never shown, only logged.
+  exposeCodes: process.env.SHOW_SIGNIN_CODES === '1' || (!production && sms.provider === 'console'),
   // Staff accounts, e.g. ADMIN_PHONES=0977123456,0966123456
   adminPhones: (process.env.ADMIN_PHONES ?? '')
     .split(',')
@@ -51,6 +52,10 @@ const app = createApp(db, {
 
 // Reminds buyers to pay and cancels Mobile Money orders nobody paid for.
 startJobs(db);
+
+if (process.env.SHOW_SIGNIN_CODES === '1') {
+  console.warn('[auth] SHOW_SIGNIN_CODES is on: sign-in codes appear on screen. Remove it before real customers use the site.');
+}
 
 app.listen(port, () =>
   console.log(

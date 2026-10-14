@@ -20,7 +20,10 @@ To remove every shop, product and order (keeping user accounts, staff and settin
 `npm run reset:catalog -- --yes`. A backup of the local database is saved in `server/.data/` first. Delete
 `server/.data/` to start over completely.
 
-Signing in uses a 6-digit code sent by SMS. While no SMS provider is connected, the code is printed in the API
+Signing in uses a 6-digit code sent by SMS. For testing before SMS is paid for, `SHOW_SIGNIN_CODES=1` (in
+`server/.env`, or in Render's Environment) also shows the code on the sign-in screen, except for staff and owners,
+whose codes are written in the server log (Render → Logs). Anyone can then sign in to any customer or shop account,
+so remove it before launch; the admin Overview warns while it is on. While no SMS provider is connected, the code is printed in the API
 terminal and shown on the sign-in screen (development only); once one is connected it is only sent by SMS.
 
 ```bash

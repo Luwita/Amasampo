@@ -23,7 +23,7 @@ const search = z.object({
 const like = (q) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 // Zed Market staff tools. Every change is written to the activity log with the staff member and the reason.
-export function adminRoutes(db, { adminPhones = [], sms = null } = {}) {
+export function adminRoutes(db, { adminPhones = [], sms = null, exposeCodes = false } = {}) {
   const owners = new Set(adminPhones.map(normalizePhone).filter(Boolean));
   const router = Router();
   router.use(requireAdmin);
@@ -63,6 +63,7 @@ export function adminRoutes(db, { adminPhones = [], sms = null } = {}) {
                 : 'live',
         couriersUnconfirmed: couriers.filter((c) => !c.confirmed && !c.disabled).map((c) => c.name),
         pointsConfirmed: !!delivery.points,
+        signInCodesShown: exposeCodes,
         commissionSet: setup.commission_set,
         commissionAccountSet: setup.commission_account_set,
         shopsWithoutMomo: setup.shops_without_momo,

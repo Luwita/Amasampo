@@ -125,7 +125,7 @@ describe('sign-in in development when the SMS cannot be sent', () => {
     db = await createDb({ url: '', dataDir: '' });
     await migrate(db);
     const down = africasTalkingSms({ username: 'sandbox', apiKey: 'wrong', fetchImpl: fakeFetch({ status: 401, body: 'The supplied authentication is invalid' }) });
-    server = createApp(db, { uploadDir: '.', sms: down, exposeCodes: true }).listen(0);
+    server = createApp(db, { uploadDir: '.', sms: down, exposeCodes: true, adminPhones: ['0955000001'] }).listen(0);
     base = `http://localhost:${server.address().port}`;
   });
   after(async () => {
@@ -143,5 +143,16 @@ describe('sign-in in development when the SMS cannot be sent', () => {
     assert.equal(res.status, 200);
     assert.equal(body.sent, false);
     assert.match(body.devCode, /^\d{6}$/);
+  });
+
+  test("an owner's code is never shown on screen, even in test mode", async () => {
+    const res = await fetch(`${base}/api/auth/request-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: '0955000001' }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.devCode, undefined);
   });
 });
