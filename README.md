@@ -193,7 +193,10 @@ shop (a shop owner who joins the team needs a different phone number).
 - **Shops**: every new shop waits for approval before buyers can see it. Applicants give their full name, NRC
   number and optional PACRA number. Staff approve (the shop goes live with a ✓ badge) or reject with a note the owner
   sees; the owner can correct their details and resubmit. While waiting, owners can already add products. Staff can
-  also suspend a live shop (hides all products and stops orders) or restore it.
+  also suspend a live shop (hides all products and stops orders) or restore it. Owners can **delete** a shop for
+  good, with a reason: its parcels not yet delivered are cancelled and the buyers told, a shop that never sold
+  anything is removed completely, and one with past orders is hidden but kept on record so buyers keep their order
+  history and any commission it owes stays on the books. Either way the owner can open a new shop afterwards.
 - **Listings and reviews**: remove with a reason the seller can see; restore listings.
 - **Users**: suspend (signs them out everywhere and blocks sign-in) or restore.
 - **Orders**: find by order number, name or phone; cancel parcels, including ones already with a courier.

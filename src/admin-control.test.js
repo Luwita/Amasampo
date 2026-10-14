@@ -145,3 +145,23 @@ test('the owner sets a real courier price and buyers see it at checkout', async 
   const yango = (await screen.findByLabelText(/Yango Delivery/)).closest('label');
   expect(within(yango).getByText('K55')).toBeInTheDocument();
 });
+
+test('an owner deletes a shop with a reason, and it leaves the marketplace', async () => {
+  api.__signIn({
+    name: 'Mutinta',
+    phone: '0977700700',
+    accountType: 'seller',
+    shop: { id: 'shop_fans', name: 'Mutinta Appliances', province: 'lusaka', town: 'Lusaka', area: 'Cairo Road', phone: '0977700700', couriers: ['pickup'] },
+  });
+  api.__signIn({ name: 'Owner', phone: '0955000000', admin: true });
+
+  renderAt('/admin?tab=shops');
+  fireEvent.change(await screen.findByLabelText('Status'), { target: { value: '' } });
+  const card = (await screen.findByRole('link', { name: 'Mutinta Appliances' })).closest('.order');
+  fireEvent.click(within(card).getByRole('button', { name: 'Delete shop' }));
+  type('Delete shop: reason', 'Owner asked to close');
+  fireEvent.click(within(card).getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(screen.queryByRole('link', { name: 'Mutinta Appliances' })).not.toBeInTheDocument());
+  expect(api.__db().shops.some((s) => s.id === 'shop_fans')).toBe(false);
+  expect(api.__db().notifications[0].title).toBe('Zed Market removed your shop Mutinta Appliances');
+});

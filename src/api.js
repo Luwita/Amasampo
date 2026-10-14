@@ -141,6 +141,7 @@ export const admin = {
   shops: (params) => request('GET', `/admin/shops?${qs(params)}`),
   verifyShop: (id, status, note) => request('PATCH', `/admin/shops/${id}/verification`, { status, note }),
   suspendShop: (id, suspended, reason) => request('PATCH', `/admin/shops/${id}/suspension`, { suspended, reason }),
+  deleteShop: (id, reason) => request('POST', `/admin/shops/${id}/delete`, { reason }),
   products: (params) => request('GET', `/admin/products?${qs(params)}`),
   removeProduct: (id, reason) => request('POST', `/admin/products/${id}/remove`, { reason }),
   restoreProduct: (id) => request('POST', `/admin/products/${id}/restore`),

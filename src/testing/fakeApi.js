@@ -909,6 +909,19 @@ export const admin = {
     log(`shop ${status}`, 'shop', id, note);
     return { ok: true };
   },
+  async deleteShop(id, reason) {
+    owner();
+    const shop = db.shops.find((x) => x.id === id);
+    if (!shop) throw new ApiError(404, 'Shop not found');
+    const parcels = db.orders.flatMap((o) => o.shipments.filter((s) => s.shopId === id));
+    const open = parcels.filter((s) => ['pending', 'dispatched'].includes(s.status));
+    open.forEach((s) => Object.assign(s, { status: 'cancelled', cancelledBy: 'admin', cancelReason: `${shop.name} is no longer on Zed Market` }));
+    db.products.filter((p) => p.shopId === id).forEach((p) => (p.deletedAt = new Date().toISOString()));
+    if (shop.ownerId) note(shop.ownerId, 'shop', `Zed Market removed your shop ${shop.name}`, reason, '/help');
+    db.shops.splice(db.shops.indexOf(shop), 1);
+    log('shop deleted', 'shop', id, `${shop.name}: ${reason}`);
+    return { ok: true, kept: parcels.length > 0, cancelled: open.length };
+  },
   async suspendShop(id, suspended, reason) {
     Object.assign(
       db.shops.find((x) => x.id === id),

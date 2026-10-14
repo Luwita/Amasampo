@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, requireOwner } from '../auth.js';
 import { HttpError, parse } from '../http.js';
 import { normalizePhone } from '../../src/utils/format.js';
 import { toProduct, toReview } from '../mappers.js';
@@ -31,8 +31,8 @@ export function adminRoutes(db, { adminPhones = [], sms = null } = {}) {
   router.get('/stats', async (_req, res) => {
     const [row] = await db.query(`SELECT
       (SELECT count(*) FROM users WHERE deleted_at IS NULL)::int AS users,
-      (SELECT count(*) FROM shops)::int AS shops,
-      (SELECT count(*) FROM shops WHERE verification = 'pending')::int AS shops_to_verify,
+      (SELECT count(*) FROM shops WHERE deleted_at IS NULL)::int AS shops,
+      (SELECT count(*) FROM shops WHERE verification = 'pending' AND deleted_at IS NULL)::int AS shops_to_verify,
       (SELECT count(*) FROM products WHERE deleted_at IS NULL)::int AS products,
       (SELECT count(*) FROM orders WHERE created_at > now() - interval '7 days')::int AS orders_7d,
       (SELECT COALESCE(sum(total), 0) FROM orders WHERE created_at > now() - interval '7 days') AS sales_7d,
@@ -93,7 +93,8 @@ export function adminRoutes(db, { adminPhones = [], sms = null } = {}) {
       `SELECT sh.*, u.name AS owner_name, u.phone AS owner_phone,
               (SELECT count(*) FROM products p WHERE p.shop_id = sh.id AND p.deleted_at IS NULL)::int AS product_count
          FROM shops sh LEFT JOIN users u ON u.id = sh.owner_id
-        WHERE ($1 = '' OR sh.name ILIKE $2 OR sh.town ILIKE $2 OR u.phone LIKE $3)
+        WHERE sh.deleted_at IS NULL
+          AND ($1 = '' OR sh.name ILIKE $2 OR sh.town ILIKE $2 OR u.phone LIKE $3)
           AND ($4::text IS NULL OR sh.verification = $4 OR ($4 = 'suspended' AND sh.suspended_at IS NOT NULL))
         ORDER BY (sh.verification = 'pending') DESC, sh.created_at DESC LIMIT 200`,
       [q, like(q), `%${q.replace(/\D/g, '') || '~'}%`, status || null],
@@ -146,13 +147,79 @@ export function adminRoutes(db, { adminPhones = [], sms = null } = {}) {
     res.json({ ok: true });
   });
 
+  // Delete a shop for good (owners only). Parcels not yet delivered are cancelled and their buyers told.
+  // A shop that never sold anything disappears completely. One with past orders is kept as a hidden record so
+  // buyers keep their order history and commission still owed stays on the books; its owner can open a new shop.
+  router.post('/shops/:id/delete', requireOwner, async (req, res) => {
+    const { reason: why } = parse(z.object({ reason }), req.body);
+    const result = await db.tx(async (t) => {
+      const [shop] = await t.query('SELECT * FROM shops WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [
+        req.params.id,
+      ]);
+      if (!shop) throw new HttpError(404, 'Shop not found');
+      if (shop.owner_id) {
+        await notify(t, shop.owner_id, {
+          kind: 'shop',
+          title: `Zed Market removed your shop ${shop.name}`,
+          body: why,
+          link: '/help',
+        });
+      }
+      const open = await t.query(
+        `SELECT order_id FROM shipments WHERE shop_id = $1 AND status IN ('pending', 'dispatched')`,
+        [shop.id],
+      );
+      for (const s of open) {
+        await cancelShipment(t, s.order_id, shop.id, 'admin', `${shop.name} is no longer on Zed Market`);
+      }
+      const [history] = await t.query(
+        `SELECT (SELECT count(*) FROM shipments WHERE shop_id = $1)::int
+              + (SELECT count(*) FROM payouts WHERE shop_id = $1)::int AS records`,
+        [shop.id],
+      );
+      const kept = history.records > 0;
+      if (kept) {
+        await t.query(
+          `UPDATE products SET deleted_at = now(), removed_reason = 'Shop removed', featured_until = NULL
+            WHERE shop_id = $1 AND deleted_at IS NULL`,
+          [shop.id],
+        );
+        await t.query(
+          `UPDATE shops SET deleted_at = now(), owner_id = NULL, suspended_at = COALESCE(suspended_at, now()),
+                  suspend_reason = $2 WHERE id = $1`,
+          [shop.id, `Deleted: ${why}`],
+        );
+      } else {
+        const mine = '(SELECT id FROM products WHERE shop_id = $1)';
+        await t.query(
+          `UPDATE buying_requests SET accepted_offer_id = NULL
+            WHERE accepted_offer_id IN (SELECT id FROM request_offers WHERE shop_id = $1)`,
+          [shop.id],
+        );
+        await t.query('DELETE FROM request_offers WHERE shop_id = $1', [shop.id]);
+        await t.query(`UPDATE request_offers SET product_id = NULL WHERE product_id IN ${mine}`, [shop.id]);
+        await t.query('DELETE FROM conversations WHERE shop_id = $1', [shop.id]); // their messages go with them
+        await t.query(`UPDATE messages SET product_id = NULL WHERE product_id IN ${mine}`, [shop.id]);
+        await t.query(`UPDATE conversations SET product_id = NULL WHERE product_id IN ${mine}`, [shop.id]);
+        await t.query('DELETE FROM price_requests WHERE shop_id = $1', [shop.id]);
+        await t.query('DELETE FROM coupons WHERE shop_id = $1', [shop.id]);
+        await t.query(`UPDATE products SET source_product_id = NULL WHERE source_product_id IN ${mine}`, [shop.id]);
+        await t.query('DELETE FROM products WHERE shop_id = $1', [shop.id]);
+        await t.query('DELETE FROM shops WHERE id = $1', [shop.id]);
+      }
+      await logAdmin(t, req.user.id, 'shop deleted', 'shop', shop.id, `${shop.name}: ${why}`);
+      return { ok: true, kept, cancelled: open.length };
+    });
+    res.json(result);
+  });
+
   router.patch('/shops/:id/suspension', async (req, res) => {
     const body = parse(z.object({ suspended: z.boolean(), reason: reason.optional() }), req.body);
     if (body.suspended && !body.reason) throw new HttpError(400, 'Give a reason for suspending this shop');
     await db.tx(async (t) => {
       const rows = await t.query(
         `UPDATE shops SET suspended_at = CASE WHEN $2 THEN now() ELSE NULL END, suspend_reason = $3
-          WHERE id = $1 RETURNING id`,
+          WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
         [req.params.id, body.suspended, body.suspended ? body.reason : null],
       );
       if (!rows.length) throw new HttpError(404, 'Shop not found');

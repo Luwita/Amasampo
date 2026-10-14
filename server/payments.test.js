@@ -300,3 +300,56 @@ describe('commission owed by shops', () => {
     assert.equal(pay.status, 409, 'paying commission does not create money to pay out');
   });
 });
+
+describe('deleting a shop', () => {
+  const remove = (shopId, token, reason = 'Asked to close') =>
+    api('POST', `/api/admin/shops/${shopId}/delete`, { reason }, token);
+  const listed = async () => (await api('GET', '/api/admin/shops', undefined, admin.token)).body.map((s) => s.id);
+
+  test('only owners can delete, and a reason is needed', async () => {
+    assert.equal((await remove(seller.shopId, seller.token)).status, 403);
+    assert.equal((await remove(seller.shopId, admin.token, '')).status, 400);
+    assert.equal((await remove('shop_nope', admin.token)).status, 404);
+  });
+
+  test('a shop that never sold anything is removed completely, and its owner can start again', async () => {
+    const owner = await signIn('0977300300', { name: 'Bwalya' });
+    const body = { ...shopBody, name: 'Bwalya Stores', phone: '0977300300' };
+    const shop = (await api('POST', '/api/shops', body, owner.token)).body;
+    const product = await api('POST', '/api/products', { name: 'Kettle', category: 'home', price: 200, stock: 5 }, owner.token);
+    assert.equal(product.status, 201);
+    await api('POST', '/api/seller/coupons', { code: 'BWALYA10', kind: 'percent', value: 10 }, owner.token);
+
+    const res = await remove(shop.id, admin.token);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { ok: true, kept: false, cancelled: 0 });
+    assert.equal((await listed()).includes(shop.id), false);
+    assert.equal((await db.query('SELECT 1 FROM shops WHERE id = $1', [shop.id])).length, 0);
+    assert.equal((await db.query('SELECT 1 FROM products WHERE id = $1', [product.body.id])).length, 0);
+    const [told] = (await api('GET', '/api/notifications', undefined, owner.token)).body;
+    assert.match(told.title, /removed your shop Bwalya Stores/);
+    assert.equal((await api('POST', '/api/shops', body, owner.token)).status, 201, 'the owner can open a new shop');
+  });
+
+  test('a shop with orders is hidden but its buyers keep their history; open parcels are cancelled', async () => {
+    const res = await remove(seller.shopId, admin.token, 'Sold fake goods');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.kept, true);
+    assert.ok(res.body.cancelled >= 2, 'the parcels not yet delivered were cancelled');
+
+    assert.equal((await listed()).includes(seller.shopId), false);
+    assert.equal((await api('GET', `/api/shops/${seller.shopId}`)).status, 404);
+    assert.equal((await api('GET', `/api/products/${fanId}`)).status, 404);
+    assert.equal((await order('cod')).status, 409, 'nothing more can be ordered from it');
+
+    const mine = (await api('GET', '/api/orders/mine', undefined, buyer.token)).body;
+    assert.ok(mine.length > 0);
+    assert.ok(mine.every((o) => o.shipments[0].shopName === 'Mutinta Appliances'));
+    assert.ok(mine.every((o) => ['delivered', 'cancelled'].includes(o.shipments[0].status)));
+
+    assert.equal((await api('GET', '/api/auth/me', undefined, seller.token)).body.shopId, null);
+    assert.equal((await remove(seller.shopId, admin.token)).status, 404, 'already deleted');
+    const again = await api('POST', '/api/shops', { ...shopBody, name: 'Mutinta Appliances 2' }, seller.token);
+    assert.equal(again.status, 201, JSON.stringify(again.body));
+  });
+});

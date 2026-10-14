@@ -96,6 +96,15 @@ function Shops() {
   const [status, setStatus] = useState('pending');
   const { items, run, reload } = useAdminList(() => api.admin.shops({ q, status }), [q, status]);
   const [editing, setEditing] = useState(null);
+  const { user, notify } = useStore();
+  const isOwner = user?.staffRole === 'owner';
+  // Deleting can't be undone, so only owners see it. Past orders of the shop are kept for its buyers.
+  const remove = (s, reason) =>
+    run(async () => {
+      const { kept, cancelled } = await api.admin.deleteShop(s.id, reason);
+      if (cancelled) notify(`${cancelled} parcel${cancelled > 1 ? 's' : ''} not yet delivered ${cancelled > 1 ? 'were' : 'was'} cancelled`);
+      if (kept) notify(`${s.name}'s past orders are kept for its buyers`);
+    }, `${s.name} deleted`);
   return (
     <>
       <SearchBox value={q} onChange={setQ} placeholder="Shop name, town or owner phone">
@@ -170,6 +179,14 @@ function Shops() {
               <button className="btn btn-outline btn-sm" onClick={() => setEditing(editing === s.id ? null : s.id)}>
                 {editing === s.id ? 'Close' : '✎ Edit details'}
               </button>
+              {isOwner && (
+                <ReasonButton
+                  label="Delete shop"
+                  placeholder="Why? This can't be undone"
+                  danger
+                  onConfirm={(reason) => remove(s, reason)}
+                />
+              )}
             </div>
             {editing === s.id && (
               <EditShop
