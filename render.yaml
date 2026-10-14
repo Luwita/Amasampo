@@ -14,8 +14,11 @@ services:
         value: "22"
       - key: NODE_ENV
         value: production
-      # Neon's connection string (postgresql://...).
+      # Neon's pooled connection string (host name contains -pooler), used for the app's queries.
       - key: DATABASE_URL
+        sync: false
+      # Neon's direct connection string (no -pooler), used to apply database updates when the server starts.
+      - key: DATABASE_URL_UNPOOLED
         sync: false
       # Owner phone numbers for the admin panel, e.g. 0977123456,0966123456
       - key: ADMIN_PHONES

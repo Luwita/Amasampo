@@ -94,9 +94,15 @@ Product photos are stored in the database, so nothing needs a permanent disk. No
 
 ### Render + Neon
 
+The project is linked to Neon (`neon.ts`, `.neon`). `neon env pull` (or `neon deploy`) writes `DATABASE_URL`
+(pooled, for the app) and `DATABASE_URL_UNPOOLED` (direct, for database updates) to `.env.local`, which
+`npm run server` and `npm run dev` load after `server/.env`. With them set, this computer uses the Neon database
+instead of the local one; remove or rename `.env.local` to go back to the local database. `npm run reset:catalog`
+only ever touches the local database.
+
 [render.yaml](render.yaml) describes the service. In Render choose **New → Blueprint**, pick this repository, and
-fill in the settings it asks for: `DATABASE_URL` (Neon's connection string), `ADMIN_PHONES`, `AT_USERNAME` and
-`AT_API_KEY`. Every push to `main` deploys again; database changes are applied automatically when the server
+fill in the settings it asks for: `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (from `.env.local`), `ADMIN_PHONES`,
+`AT_USERNAME` and `AT_API_KEY`. Every push to `main` deploys again; database changes are applied automatically when the server
 starts. On Render's free plan the server sleeps after a while without visitors and takes up to a minute to wake.
 
 The app can be installed on phones ("Add to home screen" / the Install button) once it is served over HTTPS.

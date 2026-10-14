@@ -25,3 +25,4 @@ yarn-error.log*
 # Local database and uploaded photos
 /server/.data
 /server/.env
+.neon

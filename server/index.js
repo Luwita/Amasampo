@@ -10,8 +10,22 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const production = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT) || 4000;
 
-const db = await createDb({ dataDir: process.env.PGLITE_DIR ?? path.join(root, 'server', '.data', 'pg') });
-const applied = await migrate(db);
+const dataDir = process.env.PGLITE_DIR ?? path.join(root, 'server', '.data', 'pg');
+const db = await createDb({ dataDir });
+// Neon: the app's queries go through the pooled address (DATABASE_URL); database updates use the direct one
+// (DATABASE_URL_UNPOOLED), because the pooler doesn't keep a session open between statements.
+let applied;
+if (db.kind === 'postgres' && process.env.DATABASE_URL_UNPOOLED) {
+  const direct = await createDb({ url: process.env.DATABASE_URL_UNPOOLED });
+  try {
+    applied = await migrate(direct);
+  } finally {
+    await direct.close();
+  }
+} else {
+  applied = await migrate(db);
+}
+if (applied.length) console.log(`Database updated: ${applied.join(', ')}`);
 await loadDelivery(db);
 // Demo shops and products load only when SEED_DEMO=1. Without it the marketplace starts empty and every shop
 // is added by its owner and approved by staff.
