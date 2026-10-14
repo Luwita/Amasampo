@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
 import { createApp } from './app.js';
+import { webhookVerifier } from './neonAuth.js';
+import { testAuth } from './testing/auth.js';
 import { createDb, migrate } from './db.js';
 import { africasTalkingSms, androidGatewaySms, consoleSms, smsFromEnv } from './sms.js';
 
@@ -87,72 +90,75 @@ describe("Africa's Talking SMS", () => {
   });
 });
 
-describe('sign-in when the SMS cannot be sent', () => {
-  let db;
-  let server;
-  let base;
-  before(async () => {
-    db = await createDb({ url: '', dataDir: '' });
+describe('sign-in codes from Neon Auth', () => {
+  // A signing key standing in for Neon Auth's; webhook calls are signed the way Neon Auth signs them.
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'key-1' };
+  const verifyWebhook = webhookVerifier(async () => [jwk]);
+  const sign = (raw, timestamp = Date.now()) => {
+    const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', kid: 'key-1', b64: false })).toString('base64url');
+    const signed = Buffer.from(`${timestamp}.${Buffer.from(raw).toString('base64url')}`).toString('base64url');
+    const sig = cryptoSign(null, Buffer.from(`${header}.${signed}`), privateKey).toString('base64url');
+    return { 'x-neon-signature': `${header}..${sig}`, 'x-neon-signature-kid': 'key-1', 'x-neon-timestamp': String(timestamp) };
+  };
+  const otp = (phone, code = '482913') =>
+    JSON.stringify({ event_type: 'send.otp', event_data: { otp_code: code, delivery_preference: 'sms' }, user: { phone_number: phone } });
+
+  const start = async ({ sms, exposeCodes = false }) => {
+    const db = await createDb({ url: '', dataDir: '' });
     await migrate(db);
+    const server = createApp(db, {
+      uploadDir: '.',
+      sms,
+      exposeCodes,
+      adminPhones: ['0955000001'],
+      auth: { ...testAuth, verifyWebhook },
+    }).listen(0);
+    const base = `http://localhost:${server.address().port}`;
+    const hook = (raw, headers = sign(raw)) =>
+      fetch(`${base}/api/webhooks/neon-auth`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: raw });
+    const testCode = async (to) => (await fetch(`${base}/api/session/test-code?to=${encodeURIComponent(to)}`)).json();
+    return { db, server, hook, testCode, stop: async () => (server.close(), db.close()) };
+  };
+
+  test('a signed send.otp call is delivered by SMS; unsigned, stale or altered calls are refused', async () => {
+    const texts = [];
+    const app = await start({ sms: { provider: 'test', send: async (phone, message) => texts.push({ phone, message }) } });
+    try {
+      const raw = otp('+260977123456');
+      assert.equal((await app.hook(raw)).status, 200);
+      assert.deepEqual(texts, [{ phone: '977123456', message: 'Your Zed Market code is 482913. It expires in 5 minutes.' }]);
+
+      assert.equal((await app.hook(raw, {})).status, 401, 'no signature');
+      assert.equal((await app.hook(raw, sign(raw, Date.now() - 10 * 60e3))).status, 401, 'older than 5 minutes');
+      assert.equal((await app.hook(otp('+260977123456', '000000'), sign(raw))).status, 401, 'body changed after signing');
+      assert.equal(texts.length, 1);
+      assert.equal((await app.testCode('0977123456')).error, 'Not found', 'codes are never shown outside test mode');
+    } finally {
+      await app.stop();
+    }
+  });
+
+  test('without test mode, a code that cannot be texted fails, so Neon Auth tells the person', async () => {
     const down = africasTalkingSms({ username: 'zedmarket', apiKey: 'k', fetchImpl: fakeFetch(new Error('offline')) });
-    server = createApp(db, { uploadDir: '.', sms: down }).listen(0);
-    base = `http://localhost:${server.address().port}`;
-  });
-  after(async () => {
-    server.close();
-    await db.close();
-  });
-
-  test('the person sees a clear message and can try again straight away', async () => {
-    const ask = () =>
-      fetch(`${base}/api/auth/request-code`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone: '0977123456' }),
-      }).then(async (r) => ({ status: r.status, body: await r.json() }));
-    const first = await ask();
-    assert.equal(first.status, 502);
-    assert.match(first.body.error, /couldn't send the SMS/);
-    assert.equal((await ask()).status, 502, 'not blocked by the 30-second wait');
-  });
-});
-
-describe('sign-in in development when the SMS cannot be sent', () => {
-  let db;
-  let server;
-  let base;
-  before(async () => {
-    db = await createDb({ url: '', dataDir: '' });
-    await migrate(db);
-    const down = africasTalkingSms({ username: 'sandbox', apiKey: 'wrong', fetchImpl: fakeFetch({ status: 401, body: 'The supplied authentication is invalid' }) });
-    server = createApp(db, { uploadDir: '.', sms: down, exposeCodes: true, adminPhones: ['0955000001'] }).listen(0);
-    base = `http://localhost:${server.address().port}`;
-  });
-  after(async () => {
-    server.close();
-    await db.close();
+    const app = await start({ sms: down });
+    try {
+      assert.equal((await app.hook(otp('+260977123456'))).status, 502);
+    } finally {
+      await app.stop();
+    }
   });
 
-  test('the code is still shown on screen, so developers can sign in', async () => {
-    const res = await fetch(`${base}/api/auth/request-code`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ phone: '0977123456' }),
-    });
-    const body = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(body.sent, false);
-    assert.match(body.devCode, /^\d{6}$/);
-  });
-
-  test("an owner's code is never shown on screen, even in test mode", async () => {
-    const res = await fetch(`${base}/api/auth/request-code`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ phone: '0955000001' }),
-    });
-    const body = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(body.devCode, undefined);
+  test('in test mode the code is shown on screen even when SMS fails, but never an owner\'s', async () => {
+    const down = africasTalkingSms({ username: 'zedmarket', apiKey: 'k', fetchImpl: fakeFetch(new Error('offline')) });
+    const app = await start({ sms: down, exposeCodes: true });
+    try {
+      assert.equal((await app.hook(otp('+260977123456', '111222'))).status, 200);
+      assert.deepEqual(await app.testCode('0977 123 456'), { code: '111222' });
+      assert.equal((await app.hook(otp('+260955000001', '333444'))).status, 200);
+      assert.deepEqual(await app.testCode('0955000001'), { code: null }, 'owner codes only go to the server log');
+    } finally {
+      await app.stop();
+    }
   });
 });

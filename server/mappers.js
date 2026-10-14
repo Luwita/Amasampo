@@ -2,7 +2,7 @@
 import { momoNetworkName } from '../src/data/catalog.js';
 
 const num = (v) => (v === null || v === undefined ? null : Number(v));
-export const displayPhone = (normalised) => `0${normalised}`;
+export const displayPhone = (normalised) => (normalised ? `0${normalised}` : null);
 
 export const toUser = (row, shopId = null) => ({
   id: row.id,

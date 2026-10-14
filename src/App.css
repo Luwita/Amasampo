@@ -1001,6 +1001,19 @@ select:focus {
   flex: 1 1 220px;
 }
 
+.auth-or {
+  text-align: center;
+  color: var(--muted);
+  margin: 14px 0 10px;
+  font-size: 0.9rem;
+}
+.auth .btn-block + .btn-block {
+  margin-top: 8px;
+}
+.phone-card {
+  margin-bottom: 16px;
+}
+
 /* ---------- Order success ---------- */
 .success {
   padding: 32px;

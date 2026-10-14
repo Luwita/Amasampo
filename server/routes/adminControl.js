@@ -15,25 +15,30 @@ const reason = z.string().trim().min(3, 'Give a reason; it is shown to the shop 
 
 // Full control for Zed Market staff: the staff list, platform settings, and editing anything on a shop's behalf.
 // `adminPhones` are the owners: they can't be removed or suspended from inside the app.
-export function adminControlRoutes(db, { adminPhones = [] } = {}) {
+export function adminControlRoutes(db, { adminPhones = [], adminEmails = [] } = {}) {
   const owners = new Set(adminPhones.map(normalizePhone).filter(Boolean));
+  const ownerEmails = new Set(adminEmails.map((e) => e.trim().toLowerCase()).filter(Boolean));
+  const isOwner = (u) => (u.phone && owners.has(u.phone)) || (u.email && ownerEmails.has(u.email.toLowerCase()));
+  const shown = (phone) => (phone ? `0${phone}` : 'no phone yet');
   const router = Router();
   router.use(requireAdmin);
 
   // ----- Staff -----
   router.get('/staff', async (_req, res) => {
     const rows = await db.query(
-      `SELECT id, name, phone, is_staff, staff_since, created_at FROM users
-        WHERE (is_staff OR phone = ANY($1)) AND deleted_at IS NULL ORDER BY staff_since NULLS FIRST, created_at`,
-      [[...owners]],
+      `SELECT id, name, phone, email, is_staff, staff_since, created_at FROM users
+        WHERE (is_staff OR phone = ANY($1) OR lower(email) = ANY($2)) AND deleted_at IS NULL
+        ORDER BY staff_since NULLS FIRST, created_at`,
+      [[...owners], [...ownerEmails]],
     );
     const signedUp = new Set(rows.map((r) => r.phone));
     res.json([
       ...rows.map((r) => ({
         id: r.id,
         name: r.name,
-        phone: `0${r.phone}`,
-        role: owners.has(r.phone) ? 'owner' : 'staff',
+        phone: shown(r.phone),
+        email: r.email,
+        role: isOwner(r) ? 'owner' : 'staff',
         since: r.staff_since ?? r.created_at,
       })),
       // Owners listed in ADMIN_PHONES who haven't signed in yet.
@@ -76,7 +81,6 @@ export function adminControlRoutes(db, { adminPhones = [] } = {}) {
           [newId('usr'), phone, b.name || 'Zed Market staff', `ZS${phone}`],
         );
       }
-      await t.query('DELETE FROM sessions WHERE user_id = $1', [user.id]); // sign in again as staff
       await logAdmin(t, req.user.id, 'staff added', 'user', user.id, `0${phone}`);
       await notify(t, user.id, {
         kind: 'shop',
@@ -93,11 +97,10 @@ export function adminControlRoutes(db, { adminPhones = [] } = {}) {
     await db.tx(async (t) => {
       const [user] = await t.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
       if (!user) throw new HttpError(404, 'User not found');
-      if (owners.has(user.phone)) throw new HttpError(409, 'Owners are set in ADMIN_PHONES on the server');
+      if (isOwner(user)) throw new HttpError(409, 'Owners are set in ADMIN_PHONES or ADMIN_EMAILS on the server');
       if (!user.is_staff) throw new HttpError(409, `${user.name} is not staff`);
       await t.query(`UPDATE users SET is_staff = false, account_type = 'buyer' WHERE id = $1`, [user.id]);
-      await t.query('DELETE FROM sessions WHERE user_id = $1', [user.id]);
-      await logAdmin(t, req.user.id, 'staff removed', 'user', user.id, `0${user.phone}`);
+      await logAdmin(t, req.user.id, 'staff removed', 'user', user.id, shown(user.phone));
     });
     res.json({ ok: true });
   });

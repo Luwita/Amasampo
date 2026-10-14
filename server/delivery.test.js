@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from './app.js';
+import { testAuth, testSignIn } from './testing/auth.js';
 import { createDb, migrate } from './db.js';
 
 let server;
@@ -28,12 +29,9 @@ async function api(method, url, body, token) {
   return out;
 }
 
+// Signs in through the stand-in for Neon Auth (see testing/auth.js).
 async function signIn(phone, extra = {}) {
-  await api('POST', '/api/auth/request-code', { phone });
-  const code = sent.at(-1).message.match(/\d{6}/)[0];
-  const res = await api('POST', '/api/auth/verify', { phone, code, ...extra });
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  return res.body;
+  return testSignIn(api, phone, extra);
 }
 
 let owner;
@@ -63,7 +61,7 @@ before(async () => {
   db = await createDb({ url: '', dataDir: '' });
   await migrate(db); // no demo data: the marketplace starts empty
   uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-delivery-'));
-  server = createApp(db, {
+  server = createApp(db, { auth: testAuth,
     uploadDir,
     sms: { send: async (phone, message) => sent.push({ phone, message }) },
     adminPhones: [OWNER_PHONE],

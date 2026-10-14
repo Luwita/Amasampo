@@ -4,6 +4,7 @@ import * as api from '../api';
 import { CancelParcel, RETURN_DAYS, ReportProblem } from '../components/Cases';
 import { BuyerPriceRequests } from '../components/PriceRequests';
 import PayShop from '../components/PayShop';
+import PhoneLink from '../components/PhoneLink';
 import ProductCard from '../components/ProductCard';
 import ShareButton from '../components/ShareButton';
 import ShipmentStatus from '../components/ShipmentStatus';
@@ -241,6 +242,7 @@ export default function Account() {
   const saved = wishlist.map(getProduct).filter(Boolean);
   const myOrders = user ? orders : [];
   const needsShop = user?.accountType === 'seller' && !myShop && !user?.isAdmin;
+  const [addingPhone, setAddingPhone] = useState(false);
 
   return (
     <div className="container section">
@@ -249,7 +251,7 @@ export default function Account() {
           <h1>{user ? `Muli shani, ${user.name.split(' ')[0]}` : 'My account'}</h1>
           <p className="muted">
             {user &&
-              `${user.phone} · ${user.isAdmin ? (user.staffRole === 'owner' ? 'Zed Market owner' : 'Zed Market staff') : (roleLabel[user.accountType] ?? 'Shopper')} · `}📍 {formatLocation(location)}
+              `${user.phone ?? user.email ?? ''} · ${user.isAdmin ? (user.staffRole === 'owner' ? 'Zed Market owner' : 'Zed Market staff') : (roleLabel[user.accountType] ?? 'Shopper')} · `}📍 {formatLocation(location)}
           </p>
         </div>
         <div className="pdp-buttons">
@@ -280,6 +282,22 @@ export default function Account() {
           )}
         </div>
       </div>
+
+      {user && !user.phone && (
+        <section className="card form-card narrow-card phone-card">
+          <h3>📱 Add your phone number</h3>
+          <p className="muted small">
+            We text you about your orders, shops use it to reach you, and you can sign in with a code sent to it.
+          </p>
+          {addingPhone ? (
+            <PhoneLink onDone={() => setAddingPhone(false)} />
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => setAddingPhone(true)}>
+              Add phone number
+            </button>
+          )}
+        </section>
+      )}
 
       {needsShop && (
         <div className="card setup-shop">

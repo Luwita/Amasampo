@@ -23,8 +23,10 @@ const search = z.object({
 const like = (q) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 // Zed Market staff tools. Every change is written to the activity log with the staff member and the reason.
-export function adminRoutes(db, { adminPhones = [], sms = null, exposeCodes = false } = {}) {
+export function adminRoutes(db, { adminPhones = [], adminEmails = [], sms = null, exposeCodes = false, authReady = true } = {}) {
   const owners = new Set(adminPhones.map(normalizePhone).filter(Boolean));
+  const ownerEmails = new Set(adminEmails.map((e) => e.trim().toLowerCase()).filter(Boolean));
+  const isOwner = (u) => (u.phone && owners.has(u.phone)) || (u.email && ownerEmails.has(u.email.toLowerCase()));
   const router = Router();
   router.use(requireAdmin);
 
@@ -64,6 +66,7 @@ export function adminRoutes(db, { adminPhones = [], sms = null, exposeCodes = fa
         couriersUnconfirmed: couriers.filter((c) => !c.confirmed && !c.disabled).map((c) => c.name),
         pointsConfirmed: !!delivery.points,
         signInCodesShown: exposeCodes,
+        signInReady: authReady,
         commissionSet: setup.commission_set,
         commissionAccountSet: setup.commission_account_set,
         shopsWithoutMomo: setup.shops_without_momo,
@@ -339,9 +342,10 @@ export function adminRoutes(db, { adminPhones = [], sms = null, exposeCodes = fa
       rows.map((u) => ({
         id: u.id,
         name: u.name,
-        phone: `0${u.phone}`,
+        phone: u.phone ? `0${u.phone}` : null,
+        email: u.email,
         accountType: u.account_type,
-        role: owners.has(u.phone) ? 'owner' : u.is_staff ? 'staff' : null,
+        role: isOwner(u) ? 'owner' : u.is_staff ? 'staff' : null,
         shopId: u.shop_id,
         orderCount: u.order_count,
         suspended: !!u.suspended_at,
@@ -355,8 +359,8 @@ export function adminRoutes(db, { adminPhones = [], sms = null, exposeCodes = fa
     const body = parse(z.object({ suspended: z.boolean(), reason: reason.optional() }), req.body);
     if (req.params.id === req.user.id) throw new HttpError(400, "You can't suspend your own account");
     if (body.suspended && !body.reason) throw new HttpError(400, 'Give a reason for suspending this account');
-    const [target] = await db.query('SELECT phone, is_staff FROM users WHERE id = $1', [req.params.id]);
-    if (target && owners.has(target.phone)) throw new HttpError(403, 'Owners can only be changed in ADMIN_PHONES on the server');
+    const [target] = await db.query('SELECT phone, email, is_staff FROM users WHERE id = $1', [req.params.id]);
+    if (target && isOwner(target)) throw new HttpError(403, 'Owners can only be changed in ADMIN_PHONES or ADMIN_EMAILS on the server');
     if (target?.is_staff && req.user.staffRole !== 'owner') throw new HttpError(403, 'Only owners can suspend staff');
     await db.tx(async (t) => {
       const rows = await t.query(
@@ -365,7 +369,6 @@ export function adminRoutes(db, { adminPhones = [], sms = null, exposeCodes = fa
         [req.params.id, body.suspended, body.suspended ? body.reason : null],
       );
       if (!rows.length) throw new HttpError(404, 'User not found');
-      if (body.suspended) await t.query('DELETE FROM sessions WHERE user_id = $1', [req.params.id]);
       await logAdmin(
         t,
         req.user.id,

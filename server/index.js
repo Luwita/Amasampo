@@ -45,6 +45,21 @@ if (process.env.SEED_DEMO === '1') {
 }
 
 const sms = smsFromEnv();
+// Neon Auth runs sign-up and sign-in. Its URL comes from `neon env pull` locally and the host's settings live.
+const authUrl = process.env.NEON_AUTH_BASE_URL?.trim();
+const cookieSecret = process.env.NEON_AUTH_COOKIE_SECRET?.trim();
+if (production && (!authUrl || !cookieSecret || cookieSecret.length < 32)) {
+  console.error(
+    'Sign-in needs NEON_AUTH_BASE_URL (the branch Neon Auth URL) and NEON_AUTH_COOKIE_SECRET (32+ random characters).',
+  );
+  process.exit(1);
+}
+if (!authUrl) console.warn('[auth] NEON_AUTH_BASE_URL is not set: nobody can sign in. Run `neon env pull`.');
+const list = (v) =>
+  (v ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
 const app = createApp(db, {
   sms,
   uploadDir: process.env.UPLOAD_DIR ?? path.join(root, 'server', '.data', 'uploads'),
@@ -52,11 +67,11 @@ const app = createApp(db, {
   // Shows sign-in codes on the sign-in screen: on a development computer without an SMS provider, or anywhere
   // with SHOW_SIGNIN_CODES=1 (testing before SMS is paid for). Staff codes are never shown, only logged.
   exposeCodes: process.env.SHOW_SIGNIN_CODES === '1' || (!production && sms.provider === 'console'),
-  // Staff accounts, e.g. ADMIN_PHONES=0977123456,0966123456
-  adminPhones: (process.env.ADMIN_PHONES ?? '')
-    .split(',')
-    .map((p) => p.trim())
-    .filter(Boolean),
+  // Owners, by verified phone number or email address, e.g. ADMIN_PHONES=0977123456 ADMIN_EMAILS=me@example.com
+  adminPhones: list(process.env.ADMIN_PHONES),
+  adminEmails: list(process.env.ADMIN_EMAILS),
+  production,
+  auth: { baseUrl: authUrl, cookieSecret: cookieSecret || undefined },
 });
 
 // Reminds buyers to pay and cancels Mobile Money orders nobody paid for.

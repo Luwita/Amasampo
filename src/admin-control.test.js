@@ -31,6 +31,8 @@ test('a staff account signs in to the admin panel and cannot open a shop', async
   setup();
   api.setToken(null);
   const page = renderAt('/login');
+  // An account with its phone number added can sign in with a code sent to it.
+  fireEvent.click(await screen.findByRole('button', { name: 'Sign in with a code to my phone' }));
   type('Phone number', '0976557939');
   fireEvent.click(screen.getByRole('button', { name: 'Send me a code' }));
   type(await screen.findByLabelText('6-digit code').then(() => '6-digit code'), '123456');
@@ -115,6 +117,7 @@ test('a shop owner whose shop is waiting for approval finds it after signing in'
   api.setToken(null); // the page opens signed out, so only approved shops are loaded
 
   renderAt('/login?next=/seller');
+  fireEvent.click(await screen.findByRole('button', { name: 'Sign in with a code to my phone' }));
   type('Phone number', '0977157869');
   fireEvent.click(screen.getByRole('button', { name: 'Send me a code' }));
   type(await screen.findByLabelText('6-digit code').then(() => '6-digit code'), '123456');

@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { authRoutes, authenticate } from './auth.js';
+import { authenticate, neonAuthWebhook, neonDeleteIdentity, neonPhoneLookup, sessionRoutes } from './auth.js';
+import { authProxy, devCookieSecret, neonTokenVerifier, neonWebhookVerifier } from './neonAuth.js';
 import { HttpError } from './http.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { accountRoutes } from './routes/account.js';
@@ -23,10 +24,28 @@ import { getSettings } from './settings.js';
 import { sendNotificationsBySms } from './notify.js';
 import { deliveryAdminRoutes, deliveryRoutes } from './routes/delivery.js';
 
-export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, adminPhones = [] } = {}) {
+// `auth`: Neon Auth settings. `baseUrl` is the branch's Neon Auth URL; tests pass their own `verifyToken`,
+// `lookupPhone` and `verifyWebhook` instead.
+export function createApp(
+  db,
+  { uploadDir, buildDir, sms, exposeCodes = false, adminPhones = [], adminEmails = [], production = false, auth = {} } = {},
+) {
+  const {
+    baseUrl,
+    cookieSecret = devCookieSecret(),
+    verifyToken = baseUrl ? neonTokenVerifier(baseUrl) : null,
+    lookupPhone = neonPhoneLookup(db),
+    verifyWebhook = baseUrl ? neonWebhookVerifier(baseUrl) : async () => false,
+    deleteIdentity = neonDeleteIdentity(db),
+  } = auth;
   const app = express();
   sendNotificationsBySms(sms ?? null);
   app.disable('x-powered-by');
+  app.set('trust proxy', 1); // behind the host's HTTPS proxy, so cookies and links use https
+
+  // These two read the raw request, so they come before JSON parsing.
+  if (baseUrl) app.use('/api/auth', authProxy({ baseUrl, cookieSecret }));
+  app.use('/api/webhooks/neon-auth', neonAuthWebhook(db, { sms, exposeCodes, verifyWebhook, adminPhones, adminEmails }));
   app.use(express.json({ limit: '3mb' })); // room for one base64 photo
 
   app.get('/api/health', async (_req, res) => {
@@ -34,8 +53,8 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, a
     res.json({ ok: true, db: db.kind });
   });
 
-  app.use('/api', authenticate(db, { adminPhones }));
-  app.use('/api/auth', authRoutes(db, { sms, exposeCodes, adminPhones }));
+  app.use('/api', authenticate(db, { adminPhones, adminEmails, production, verifyToken, lookupPhone }));
+  app.use('/api/session', sessionRoutes(db, { exposeCodes, adminPhones, adminEmails }));
   app.use('/api', catalogRoutes(db));
   app.use('/api', reviewRoutes(db));
   app.use('/api/orders', orderRoutes(db));
@@ -43,17 +62,17 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, a
   app.use('/api', promotionRoutes(db));
   app.use('/api/conversations', messageRoutes(db));
   app.use('/api/price-requests', priceRequestRoutes(db));
-  app.use('/api/me', accountRoutes(db));
+  app.use('/api/me', accountRoutes(db, { deleteIdentity }));
   app.use('/api/cases', caseRoutes(db));
   app.use('/api/admin/support', supportAdminRoutes(db));
   app.use('/api/admin', adminToolRoutes(db));
-  app.use('/api/admin', adminControlRoutes(db, { adminPhones }));
+  app.use('/api/admin', adminControlRoutes(db, { adminPhones, adminEmails }));
   app.use('/api/admin', deliveryAdminRoutes(db));
   app.use('/api', deliveryRoutes(db));
   app.use('/api/banners', bannerRoutes(db));
   // Public: commission rate and voucher amounts, shown in the seller terms and on the invite page.
   app.get('/api/settings', async (_req, res) => res.json(await getSettings(db)));
-  app.use('/api/admin', adminRoutes(db, { adminPhones, sms, exposeCodes }));
+  app.use('/api/admin', adminRoutes(db, { adminPhones, sms, exposeCodes, authReady: !!baseUrl }));
   app.use('/api/notifications', notificationRoutes(db));
   app.use('/api/support', supportRoutes(db));
   app.use('/api/buying-requests', buyingRequestRoutes(db));

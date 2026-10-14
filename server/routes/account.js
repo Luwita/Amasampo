@@ -4,7 +4,8 @@ import { HttpError } from '../http.js';
 import { loadOrders } from '../queries.js';
 
 // The user's rights under Zambia's Data Protection Act: a copy of their data, and deletion.
-export function accountRoutes(db) {
+// `deleteIdentity(authId)` deletes the person's Neon Auth sign-in when they delete their account.
+export function accountRoutes(db, { deleteIdentity = async () => {} } = {}) {
   const router = Router();
   router.use(requireUser);
 
@@ -32,7 +33,7 @@ export function accountRoutes(db) {
     res.set('Content-Disposition', 'attachment; filename="zed-market-my-data.json"');
     res.json({
       exportedAt: new Date().toISOString(),
-      user: { ...user, phone: `0${user.phone}` },
+      user: { ...user, phone: user.phone ? `0${user.phone}` : null },
       shop,
       orders,
       reviews,
@@ -44,6 +45,7 @@ export function accountRoutes(db) {
   // Removes personal data. Orders stay (shops need their sales records) but no longer name or reach the person.
   router.delete('/', async (req, res) => {
     const id = req.user.id;
+    const [row] = await db.query('SELECT auth_id FROM users WHERE id = $1', [id]);
     if (req.user.shopId) {
       throw new HttpError(409, 'Close your shop before deleting your account. Contact support to close it.');
     }
@@ -62,14 +64,14 @@ export function accountRoutes(db) {
       await t.query(`UPDATE reviews SET author_name = 'Former customer' WHERE user_id = $1`, [id]);
       await t.query('DELETE FROM conversations WHERE buyer_id = $1', [id]);
       await t.query(`UPDATE price_requests SET note = '' WHERE buyer_id = $1`, [id]);
-      await t.query('DELETE FROM otp_codes WHERE phone = (SELECT phone FROM users WHERE id = $1)', [id]);
-      await t.query('DELETE FROM sessions WHERE user_id = $1', [id]);
-      // The phone number is replaced so it can sign up again as a new, unrelated account.
+      // The row keeps its auth_id so a still-valid sign-in token can't recreate the account; the Neon Auth
+      // sign-in itself is deleted below, so the same email can sign up again as a new, unrelated account.
       await t.query(
-        `UPDATE users SET name = 'Deleted user', phone = 'deleted-' || id, deleted_at = now() WHERE id = $1`,
+        `UPDATE users SET name = 'Deleted user', phone = NULL, email = NULL, deleted_at = now() WHERE id = $1`,
         [id],
       );
     });
+    if (row.auth_id) await deleteIdentity(row.auth_id);
     res.json({ ok: true });
   });
 

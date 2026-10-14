@@ -128,33 +128,70 @@ export const setToken = (t) => {
   token = t;
 };
 
-export async function requestCode(phone) {
-  if (!/^[79]\d{8}$/.test(normalizePhone(phone))) throw new ApiError(400, 'Enter a valid Zambian mobile number');
-  return { sent: true, devCode: FAKE_CODE };
-}
-
-export async function verifyCode({ phone, code, name, accountType, referralCode }) {
-  if (code !== FAKE_CODE) throw new ApiError(400, 'That code is not correct');
-  let user = db.users.find((u) => normalizePhone(u.phone) === normalizePhone(phone));
-  if (!user) {
-    user = {
-      id: `usr_${db.users.length + 1}`,
-      name: name || 'Zed Market Shopper',
-      phone: `0${normalizePhone(phone)}`,
-      accountType: accountType ?? 'buyer',
-      referralCode: `ZM${String(db.users.length + 1).padStart(6, '0')}`,
-    };
-    const inviter = referralCode && db.users.find((u) => u.referralCode === referralCode.toUpperCase());
-    if (inviter) {
-      user.referredBy = inviter.id;
-      db.vouchers.push(newVoucher(user.id, WELCOME_VOUCHER, 'welcome'));
-    }
-    db.users.push(user);
-  }
+// ----- Sign-in, standing in for Neon Auth -----
+// Accounts sign up with email and password (`db.passwords`); a phone number is added with the code 123456.
+const startSession = (user) => {
   const t = `tok_${user.id}_${Date.now()}`;
   db.sessions[t] = user.id;
   token = t;
-  return { token: t, user: currentUser() };
+};
+
+export const restoreSession = async () => !!(token && db.sessions[token]);
+
+export async function signUp({ name, email, password }) {
+  db.passwords ??= {};
+  if (db.users.some((u) => u.email === email.toLowerCase())) throw new ApiError(422, 'User already exists');
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new ApiError(400, 'Invalid email');
+  const user = {
+    id: `usr_${db.users.length + 1}`,
+    name,
+    email: email.toLowerCase(),
+    phone: null,
+    accountType: 'buyer',
+    referralCode: `ZM${String(db.users.length + 1).padStart(6, '0')}`,
+  };
+  db.users.push(user);
+  db.passwords[user.email] = password;
+  startSession(user);
+}
+
+export async function signIn({ email, password }) {
+  const user = db.users.find((u) => u.email === email.toLowerCase());
+  if (!user || db.passwords?.[user.email] !== password) throw new ApiError(401, 'Invalid email or password');
+  startSession(user);
+}
+
+export async function signInWithGoogle() {
+  throw new ApiError(0, 'Google sign-in is not available in tests');
+}
+
+export async function welcome({ name, accountType, referralCode }) {
+  const user = db.users.find((u) => u.id === currentUser().id);
+  Object.assign(user, { ...(name ? { name } : {}), ...(accountType ? { accountType } : {}) });
+  const inviter = referralCode && db.users.find((u) => u.referralCode === referralCode.toUpperCase() && u.id !== user.id);
+  if (inviter && !user.referredBy) {
+    user.referredBy = inviter.id;
+    db.vouchers.push(newVoucher(user.id, WELCOME_VOUCHER, 'welcome'));
+  }
+  return currentUser();
+}
+
+export async function sendPhoneCode(phone) {
+  if (!/^[79]\d{8}$/.test(normalizePhone(phone))) throw new ApiError(400, 'Enter a valid Zambian mobile number');
+  return { ok: true };
+}
+export const testCode = async () => ({ code: FAKE_CODE });
+
+export async function verifyPhone({ phone, code, link }) {
+  if (code !== FAKE_CODE) throw new ApiError(400, 'That code is not correct');
+  const number = `0${normalizePhone(phone)}`;
+  if (link) {
+    db.users.find((u) => u.id === currentUser().id).phone = number;
+    return;
+  }
+  const user = db.users.find((u) => u.phone && normalizePhone(u.phone) === normalizePhone(phone));
+  if (!user) throw new ApiError(400, 'No account has this phone number yet. Sign in with email, then add it.');
+  startSession(user);
 }
 
 export const me = async () => currentUser();

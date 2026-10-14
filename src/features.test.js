@@ -135,10 +135,10 @@ test('joining with an invite link gives the new customer a welcome voucher', asy
   renderAt('/login?ref=zmtest1');
   expect(await screen.findByLabelText('Invite code (optional)')).toHaveValue('ZMTEST1');
   type('Full name', 'Natasha Mwale');
-  type('Phone number', '0966222333');
-  fireEvent.click(screen.getByRole('button', { name: 'Send me a code' }));
-  type(await screen.findByLabelText('6-digit code').then(() => '6-digit code'), '123456');
+  type('Email', 'natasha@example.com');
+  type('Password', 'Natasha-2026');
   fireEvent.click(screen.getAllByRole('button', { name: 'Create account' }).at(-1));
+  fireEvent.click(await screen.findByRole('button', { name: 'Skip for now' }));
 
   await waitFor(() => expect(api.__db().vouchers).toHaveLength(1));
   expect(api.__db().users[1].referredBy).toBe('usr_1');

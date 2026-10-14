@@ -59,7 +59,7 @@ export function StoreProvider({ children }) {
   // Bumped after a shop owner changes products so open product lists fetch again.
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [user, setUser] = useState(null);
-  const [authReady, setAuthReady] = useState(!api.getToken());
+  const [authReady, setAuthReady] = useState(false);
   const [orders, setOrders] = useState([]);
   const [shopOrders, setShopOrders] = useState([]);
   const [ordersReady, setOrdersReady] = useState(false);
@@ -103,15 +103,14 @@ export function StoreProvider({ children }) {
     loadShops();
   }, [loadShops, userId]);
 
+  // Whoever is signed in on this browser (Neon Auth keeps the session), as a ZedMarket user.
   useEffect(() => {
-    if (api.getToken()) {
-      api
-        .me()
-        .then(setUser)
-        .catch(() => api.setToken(null))
-        .finally(() => setAuthReady(true));
-    }
-  }, [loadShops]);
+    api
+      .restoreSession()
+      .then((signedIn) => (signedIn ? api.me().then(setUser) : null))
+      .catch(() => api.setToken(null))
+      .finally(() => setAuthReady(true));
+  }, []);
 
   useEffect(() => {
     loadOrders(user).catch(() => {});
@@ -353,14 +352,31 @@ export function StoreProvider({ children }) {
       // ----- Sign-in -----
       user,
       authReady,
-      requestCode: (phone) => api.requestCode(phone),
-      async verifyCode(details) {
-        const { token, user: signedIn } = await api.verifyCode(details);
-        api.setToken(token);
-        setUser(signedIn);
+      // New account: email and password at Neon Auth, then the ZedMarket details (name, kind, invite code).
+      async signUp({ name, email, password, accountType, referralCode }) {
+        await api.signUp({ name, email, password });
+        await api.welcome({ name, accountType, referralCode: referralCode || undefined });
+        const signedIn = await refreshMe();
         setToast(`Welcome, ${signedIn.name.split(' ')[0]}!`);
         return signedIn;
       },
+      async signIn(credentials) {
+        await api.signIn(credentials);
+        const signedIn = await refreshMe();
+        setToast(`Welcome back, ${signedIn.name.split(' ')[0]}!`);
+        return signedIn;
+      },
+      signInWithGoogle: (returnTo) => api.signInWithGoogle(returnTo),
+      sendPhoneCode: (phone) => api.sendPhoneCode(phone),
+      testCode: (phone) => api.testCode(phone).catch(() => ({ code: null })),
+      // Signs in with a phone code, or (`link`) adds the verified number to the signed-in account.
+      async verifyPhone(details) {
+        await api.verifyPhone(details);
+        const signedIn = await refreshMe();
+        setToast(details.link ? 'Phone number added' : `Welcome back, ${signedIn.name.split(' ')[0]}!`);
+        return signedIn;
+      },
+      refreshMe,
       async logout() {
         await api.logout().catch(() => {});
         api.setToken(null);

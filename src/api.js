@@ -1,20 +1,37 @@
 // Thin client for the Zed Market API. In development, CRA proxies /api to the server on port 4000.
-const TOKEN_KEY = 'zedmarket.token';
+import { authClient } from './auth';
+import { normalizePhone } from './utils/format';
 
-export function getToken() {
+// Accounts are run by Neon Auth. While someone is signed in, each API request carries a short-lived Neon Auth
+// token (15 minutes), fetched again shortly before it runs out. Nobody signed in: no token is asked for.
+let signedIn = false;
+let cached = null; // { token, exp }
+
+const expiryOf = (jwt) => {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp ?? 0;
   } catch {
-    return null;
+    return 0;
   }
+};
+
+async function authToken() {
+  if (!signedIn) return null;
+  if (cached && cached.exp * 1000 > Date.now() + 30e3) return cached.token;
+  try {
+    const { data } = await authClient.token();
+    cached = data?.token ? { token: data.token, exp: expiryOf(data.token) } : null;
+  } catch {
+    cached = null;
+  }
+  return cached?.token ?? null;
 }
 
+export const getToken = () => (signedIn ? cached?.token ?? 'signed-in' : null);
 export function setToken(token) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // storage unavailable: the session lasts until the page is closed
+  if (!token) {
+    signedIn = false;
+    cached = null;
   }
 }
 
@@ -27,7 +44,7 @@ export class ApiError extends Error {
 }
 
 async function request(method, path, body) {
-  const token = getToken();
+  const token = await authToken();
   let res;
   try {
     res = await fetch(`/api${path}`, {
@@ -49,10 +66,80 @@ async function request(method, path, body) {
   return data;
 }
 
-export const requestCode = (phone) => request('POST', '/auth/request-code', { phone });
-export const verifyCode = (body) => request('POST', '/auth/verify', body);
-export const me = () => request('GET', '/auth/me');
-export const logout = () => request('POST', '/auth/logout');
+// ----- Sign-in (Neon Auth) -----
+// Neon Auth answers { data, error }; some calls throw instead. Either way the person sees a readable message.
+async function neon(call, fallback) {
+  let result;
+  try {
+    result = await call();
+  } catch (err) {
+    throw new ApiError(err.status ?? 0, err.message || fallback);
+  }
+  if (result?.error) throw new ApiError(result.error.status ?? 400, result.error.message || fallback);
+  return result?.data;
+}
+const asE164 = (phone) => `+260${normalizePhone(phone)}`;
+const startSession = () => {
+  signedIn = true;
+  cached = null;
+};
+
+// Whether someone is signed in on this browser (also finishes a Google sign-in on the page it returns to).
+export async function restoreSession() {
+  try {
+    const { data } = await authClient.getSession();
+    signedIn = !!data?.session;
+  } catch {
+    signedIn = false;
+  }
+  cached = null;
+  return signedIn;
+}
+
+export async function signUp({ name, email, password }) {
+  await neon(() => authClient.signUp.email({ name, email, password }), "Couldn't create your account");
+  startSession();
+}
+
+export async function signIn({ email, password }) {
+  await neon(() => authClient.signIn.email({ email, password }), "Couldn't sign you in");
+  startSession();
+}
+
+// Leaves the page for Google; Google sends the person back to `returnTo` on ZedMarket, signed in.
+export async function signInWithGoogle(returnTo = '/login') {
+  await neon(
+    () => authClient.signIn.social({ provider: 'google', callbackURL: `${window.location.origin}${returnTo}` }),
+    "Couldn't open Google sign-in",
+  );
+}
+
+// Texts a 6-digit code to a phone number: to add it to the signed-in account, or to sign in with it.
+export const sendPhoneCode = (phone) =>
+  neon(() => authClient.phoneNumber.sendOtp({ phoneNumber: asE164(phone) }), "Couldn't send the code. Try again.");
+
+// `link`: add the number to the signed-in account; otherwise sign in with an already-added number.
+export async function verifyPhone({ phone, code, link }) {
+  await neon(
+    () => authClient.phoneNumber.verify({ phoneNumber: asE164(phone), code, ...(link ? { updatePhoneNumber: true } : {}) }),
+    'That code is not correct',
+  );
+  startSession();
+}
+
+export async function logout() {
+  try {
+    await authClient.signOut();
+  } finally {
+    signedIn = false;
+    cached = null;
+  }
+}
+
+export const me = () => request('GET', '/session/me');
+export const welcome = (details) => request('POST', '/session/welcome', details);
+// Test mode only: the code last sent to a phone number, shown on screen while SMS isn't paid for.
+export const testCode = (to) => request('GET', `/session/test-code?to=${encodeURIComponent(to)}`);
 
 export const getShops = () => request('GET', '/shops');
 // Search, filter and page products. Empty values are left out of the query string.

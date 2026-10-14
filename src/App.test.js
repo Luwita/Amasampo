@@ -23,17 +23,25 @@ test('filters products by province and town', async () => {
   expect(screen.queryByText(/Tecno Spark/)).not.toBeInTheDocument();
 });
 
-test('signing up as a shop owner with an SMS code leads to shop setup, then uploading a product', async () => {
+test('signing up as a shop owner with email, then adding a phone by SMS code, leads to shop setup', async () => {
   renderAt('/login');
   fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
   type('Full name', 'Mwansa Banda');
   type('I am a', 'seller');
+  type('Email', 'mwansa@example.com');
+  type('Password', 'short');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Create account' }).at(-1));
+  expect(await screen.findByText('Use a password of at least 8 characters')).toBeInTheDocument();
+  type('Password', 'Mwansa-2026');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Create account' }).at(-1));
+
+  // Right after signing up: add a phone number with an SMS code (shown on screen in test mode).
+  expect(await screen.findByRole('heading', { name: 'Add your phone number' })).toBeInTheDocument();
   type('Phone number', '0977 123 456');
   fireEvent.click(screen.getByRole('button', { name: 'Send me a code' }));
-
   expect(await screen.findByText(/Your code is/)).toHaveTextContent('123456');
   type('6-digit code', '123456');
-  fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[1]);
+  fireEvent.click(screen.getByRole('button', { name: 'Add phone number' }));
 
   // Lands on shop setup with name and phone filled in.
   expect(await screen.findByRole('heading', { name: 'Open your shop', level: 2 })).toBeInTheDocument();

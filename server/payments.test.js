@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from './app.js';
+import { testAuth, testSignIn } from './testing/auth.js';
 import { createDb, migrate } from './db.js';
 import { smsText } from './notify.js';
 
@@ -19,12 +20,9 @@ async function api(method, url, body, token) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
+// Signs in through the stand-in for Neon Auth (see testing/auth.js).
 async function signIn(phone, extra = {}) {
-  await api('POST', '/api/auth/request-code', { phone });
-  const code = sent.at(-1).message.match(/\d{6}/)[0];
-  const res = await api('POST', '/api/auth/verify', { phone, code, ...extra });
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  return res.body;
+  return testSignIn(api, phone, extra);
 }
 
 const shopBody = {
@@ -59,7 +57,7 @@ const textsTo = (phone) => sent.filter((m) => m.phone === phone).map((m) => m.me
 before(async () => {
   db = await createDb({ url: '', dataDir: '' });
   await migrate(db);
-  server = createApp(db, {
+  server = createApp(db, { auth: testAuth,
     uploadDir: '.',
     adminPhones: ['0955000001'],
     sms: {
@@ -347,7 +345,7 @@ describe('deleting a shop', () => {
     assert.ok(mine.every((o) => o.shipments[0].shopName === 'Mutinta Appliances'));
     assert.ok(mine.every((o) => ['delivered', 'cancelled'].includes(o.shipments[0].status)));
 
-    assert.equal((await api('GET', '/api/auth/me', undefined, seller.token)).body.shopId, null);
+    assert.equal((await api('GET', '/api/session/me', undefined, seller.token)).body.shopId, null);
     assert.equal((await remove(seller.shopId, admin.token)).status, 404, 'already deleted');
     const again = await api('POST', '/api/shops', { ...shopBody, name: 'Mutinta Appliances 2' }, seller.token);
     assert.equal(again.status, 201, JSON.stringify(again.body));
@@ -362,7 +360,7 @@ describe('unpaid Mobile Money orders', () => {
 
   before(async () => {
     // A fresh shop for these checks (the earlier one was deleted).
-    shop = (await api('GET', '/api/auth/me', undefined, seller.token)).body.shopId;
+    shop = (await api('GET', '/api/session/me', undefined, seller.token)).body.shopId;
     await api('PATCH', `/api/admin/shops/${shop}/verification`, { status: 'verified' }, admin.token);
     fan = (await api('POST', '/api/products', { name: 'Desk Fan', category: 'home', price: 300, stock: 10 }, seller.token)).body.id;
   });

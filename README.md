@@ -20,10 +20,36 @@ To remove every shop, product and order (keeping user accounts, staff and settin
 `npm run reset:catalog -- --yes`. A backup of the local database is saved in `server/.data/` first. Delete
 `server/.data/` to start over completely.
 
-Signing in uses a 6-digit code sent by SMS. For testing before SMS is paid for, `SHOW_SIGNIN_CODES=1` (in
-`server/.env`, or in Render's Environment) also shows the code on the sign-in screen, except for staff and owners,
-whose codes are written in the server log (Render → Logs). Anyone can then sign in to any customer or shop account,
-so remove it before launch; the admin Overview warns while it is on. While no SMS provider is connected, the code is printed in the API
+## Sign-in (Neon Auth)
+
+Accounts are run by [Neon Auth](https://neon.com/docs/auth/overview) (Managed Better Auth), on the same Neon
+branch as the database:
+
+- **Sign up** with name, email and password, or with Google. Right after, the app asks for a phone number and
+  verifies it with a 6-digit SMS code ("Skip for now" is possible; My account keeps asking). Once added, the number
+  can also be used to sign in with a code. Neon Auth has no sign-up with only a phone number.
+- **The browser talks to Neon Auth through this server** (`/api/auth/*`, [server/neonAuth.js](server/neonAuth.js)),
+  so the sign-in cookies belong to ZedMarket's own address and browsers that block other sites' cookies keep people
+  signed in. Every other API request carries a 15-minute Neon Auth token, checked against Neon Auth's public keys.
+- **ZedMarket's own account** (the `users` table: shop, orders, role) is linked by `users.auth_id` and created on
+  the first request. The verified phone number is copied from Neon Auth's `neon_auth.user` table. Someone staff added
+  by phone takes over that account when they verify the same number. Deleting an account also deletes the Neon Auth
+  sign-in.
+- **SMS codes** are sent by this server: Neon Auth calls the `send.otp` webhook at `/api/webhooks/neon-auth`
+  (signature checked), and the code goes out through Africa's Talking. The webhook needs a public HTTPS address, so
+  phone codes work on the live site only. Register it on the production branch:
+  `neon neon-auth config webhook update --branch production --enabled --url https://<site>/api/webhooks/neon-auth --enabled-events send.otp`
+  and add the site to the trusted domains: `neon neon-auth domain add https://<site> --branch production`.
+  With `send.otp` subscribed, Neon Auth stops sending its own emailed codes too; ZedMarket has no email sending
+  yet, so email verification and password-reset emails are not used.
+- **Owners** are `ADMIN_PHONES` (once verified on the account) and `ADMIN_EMAILS` (once Neon Auth has verified the
+  address; on a development computer also before).
+- **Test mode:** `SHOW_SIGNIN_CODES=1` also shows phone codes on screen, except for staff and owners, whose codes are
+  written in the server log (Render → Logs). Anyone could then sign in as any customer with a linked phone, so
+  remove it before launch; the admin Overview warns while it is on.
+- **Phone app (Expo):** Google refuses sign-in inside app web views, so the phone app uses email or a phone code.
+  On a development computer reached over Wi-Fi (`http://192.168…`) the secure sign-in cookies aren't kept; sign in
+  on `http://localhost` or on the live HTTPS site. While no SMS provider is connected, the code is printed in the API
 terminal and shown on the sign-in screen (development only); once one is connected it is only sent by SMS.
 
 ```bash
@@ -54,8 +80,10 @@ React app (src/)  ──/api──▶  Express API (server/)  ──SQL──▶
 
 | Method | Path | Who |
 | --- | --- | --- |
-| POST | `/api/auth/request-code`, `/api/auth/verify`, `/api/auth/logout` | anyone |
-| GET | `/api/auth/me` | signed in |
+| * | `/api/auth/*` | anyone: Neon Auth (sign-up, sign-in, sign-out, phone codes, tokens), passed through |
+| GET | `/api/session/me` | signed in: the ZedMarket account |
+| POST | `/api/session/welcome` | signed in: name, kind of account and invite code, right after sign-up |
+| POST | `/api/webhooks/neon-auth` | Neon Auth only (signed): delivers SMS sign-in codes |
 | GET | `/api/shops`, `/api/shops/:id`, `/api/products/:id`, `/api/stats/provinces` | anyone |
 | GET | `/api/products?q=&cat=&prov=&town=&shop=&sort=&page=&limit=` | anyone: search, filter, sort, page |
 | GET | `/api/products/:id/reviews`, `/api/shops/:id/reviews` | anyone |

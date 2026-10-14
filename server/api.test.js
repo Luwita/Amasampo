@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from './app.js';
+import { testAuth, testSignIn } from './testing/auth.js';
 import { createDb, migrate } from './db.js';
 import { seedIfEmpty } from './seed.js';
 
@@ -19,7 +20,7 @@ before(async () => {
   await seedIfEmpty(db);
   uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-uploads-'));
   const sms = { send: async (phone, message) => sent.push({ phone, message }) };
-  server = createApp(db, { uploadDir, sms }).listen(0);
+  server = createApp(db, { auth: testAuth, uploadDir, sms }).listen(0);
   base = `http://localhost:${server.address().port}`;
 });
 
@@ -45,14 +46,9 @@ async function api(method, url, body, token) {
 }
 
 // Signs in through the SMS code flow, reading the code from the fake SMS sender.
+// Signs in through the stand-in for Neon Auth (see testing/auth.js).
 async function signIn(phone, extra = {}) {
-  const req = await api('POST', '/api/auth/request-code', { phone });
-  assert.equal(req.status, 200, JSON.stringify(req.body));
-  assert.equal(req.body.devCode, undefined, 'codes must not leak unless exposeCodes is on');
-  const code = sent.at(-1).message.match(/\d{6}/)[0];
-  const res = await api('POST', '/api/auth/verify', { phone, code, ...extra });
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  return res.body;
+  return testSignIn(api, phone, extra);
 }
 
 const shopBody = {
@@ -67,35 +63,24 @@ const shopBody = {
 };
 
 describe('sign-in', () => {
-  test('wrong codes are rejected and limited', async () => {
-    await api('POST', '/api/auth/request-code', { phone: '0961000001' });
-    for (let i = 0; i < 5; i++) {
-      const res = await api('POST', '/api/auth/verify', { phone: '0961000001', code: '000000' });
-      // A 1-in-a-million chance the real code is 000000; that would surface as a 200 here.
-      assert.equal(res.status, 400);
-    }
-    const locked = await api('POST', '/api/auth/verify', { phone: '0961000001', code: '000000' });
-    assert.equal(locked.status, 429);
+  test('a sign-in token that is missing, made up or tampered with gets nobody', async () => {
+    assert.equal((await api('GET', '/api/session/me')).status, 401);
+    assert.equal((await api('GET', '/api/session/me', undefined, 'not-a-token')).status, 401);
+    assert.equal((await api('GET', '/api/session/me', undefined, 'test:12345')).status, 401);
   });
 
-  test('codes cannot be re-requested immediately', async () => {
-    await api('POST', '/api/auth/request-code', { phone: '0961000002' });
-    const again = await api('POST', '/api/auth/request-code', { phone: '0961000002' });
-    assert.equal(again.status, 429);
-  });
-
-  test('the same number in different formats is one account', async () => {
+  test('the first sign-in creates the ZedMarket account, with the verified phone; later ones find it', async () => {
     const first = await signIn('0971 000 003', { name: 'Chanda', accountType: 'buyer' });
-    assert.equal(first.isNew, true);
-    await db.query('DELETE FROM otp_codes');
+    assert.equal(first.status, 200);
+    assert.equal(first.user.phone, '0971000003');
+    assert.equal(first.user.email, '971000003@example.test');
     const second = await signIn('+260971000003');
-    assert.equal(second.isNew, false);
     assert.equal(second.user.id, first.user.id);
     assert.equal(second.user.name, 'Chanda');
   });
 
   test('protected routes need a session', async () => {
-    assert.equal((await api('GET', '/api/auth/me')).status, 401);
+    assert.equal((await api('GET', '/api/session/me')).status, 401);
     assert.equal((await api('POST', '/api/orders', {})).status, 401);
   });
 });
@@ -109,7 +94,7 @@ describe('shops, products and orders', () => {
     seller = await signIn('0977123456', { name: 'Mwansa', accountType: 'seller' });
     const created = await api('POST', '/api/shops', shopBody, seller.token);
     assert.equal(created.status, 201, JSON.stringify(created.body));
-    const me = await api('GET', '/api/auth/me', undefined, seller.token);
+    const me = await api('GET', '/api/session/me', undefined, seller.token);
     assert.equal(me.body.shopId, created.body.id);
     seller.shopId = created.body.id;
     // New shops wait for staff approval; the approval flow itself is tested in cases-admin.test.js.

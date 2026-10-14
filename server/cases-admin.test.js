@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from './app.js';
+import { testAuth, testSignIn } from './testing/auth.js';
 import { createDb, migrate } from './db.js';
 import { seedIfEmpty } from './seed.js';
 
@@ -29,11 +30,9 @@ async function api(method, url, body, token) {
   return out;
 }
 
+// Signs in through the stand-in for Neon Auth (see testing/auth.js).
 async function signIn(phone, name = 'Test') {
-  await api('POST', '/api/auth/request-code', { phone });
-  const code = sent.at(-1).message.match(/\d{6}/)[0];
-  const res = await api('POST', '/api/auth/verify', { phone, code, name });
-  return { ...res.body, status: res.status };
+  return testSignIn(api, phone, name);
 }
 
 let admin;
@@ -66,7 +65,7 @@ before(async () => {
   await migrate(db);
   await seedIfEmpty(db);
   uploadDir = await mkdtemp(path.join(tmpdir(), 'zed-market-cases-'));
-  server = createApp(db, {
+  server = createApp(db, { auth: testAuth,
     uploadDir,
     sms: { send: async (phone, message) => sent.push({ phone, message }) },
     adminPhones: [ADMIN_PHONE],
@@ -304,9 +303,9 @@ describe('staff tools', () => {
     const stats = await api('GET', '/api/admin/stats', undefined, admin.token);
     assert.equal(stats.status, 200);
     assert.equal(stats.body.refundsDue, 4);
-    const me = (await api('GET', '/api/auth/me', undefined, admin.token)).body;
+    const me = (await api('GET', '/api/session/me', undefined, admin.token)).body;
     assert.equal(me.isAdmin, true);
-    assert.equal((await api('GET', '/api/auth/me', undefined, buyer.token)).body.isAdmin, false);
+    assert.equal((await api('GET', '/api/session/me', undefined, buyer.token)).body.isAdmin, false);
   });
 
   test('new shops stay hidden until staff approve them; rejected shops can fix and resubmit', async () => {
@@ -461,10 +460,9 @@ describe('staff tools', () => {
       { suspended: true, reason: 'Fraudulent orders' },
       admin.token,
     );
-    assert.equal((await api('GET', '/api/auth/me', undefined, other.token)).status, 401);
-    const again = await signIn('0955222000');
-    assert.equal(again.status, 403);
-    assert.match(again.error, /suspended/);
+    const refused = await api('GET', '/api/session/me', undefined, other.token);
+    assert.equal(refused.status, 403);
+    assert.match(refused.body.error, /suspended/);
     await api('PATCH', `/api/admin/users/${other.user.id}/suspension`, { suspended: false }, admin.token);
     assert.equal((await signIn('0955222000')).status, 200);
   });

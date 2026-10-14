@@ -2,7 +2,8 @@ import { defineConfig } from "@neon/config/v1";
 
 export default defineConfig({
   // Declare your Neon services here
-  auth: false,
+  // Neon Auth (Managed Better Auth): users and sessions, per branch.
+  auth: true,
   // Branch policy: per-branch tuning
   branch: (branch) => {
     if (branch.isDefault) {

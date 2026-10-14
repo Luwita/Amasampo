@@ -22,8 +22,16 @@ services:
       # Neon's direct connection string (no -pooler), used to apply database updates when the server starts.
       - key: DATABASE_URL_UNPOOLED
         sync: false
-      # Owner phone numbers for the admin panel, e.g. 0977123456,0966123456
+      # Neon Auth: the production branch's NEON_AUTH_BASE_URL (neon env pull --branch production).
+      - key: NEON_AUTH_BASE_URL
+        sync: false
+      # Signs the sign-in session cookie; Render makes a random one.
+      - key: NEON_AUTH_COOKIE_SECRET
+        generateValue: true
+      # Owners: phone numbers they verify on their account, and/or email addresses, comma-separated.
       - key: ADMIN_PHONES
+        sync: false
+      - key: ADMIN_EMAILS
         sync: false
       - key: AT_USERNAME
         sync: false
