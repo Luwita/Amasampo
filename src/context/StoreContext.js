@@ -367,6 +367,16 @@ export function StoreProvider({ children }) {
         return signedIn;
       },
       signInWithGoogle: (returnTo) => api.signInWithGoogle(returnTo),
+      changePassword: (details) => api.changePassword(details),
+      requestPasswordReset: (email) => api.requestPasswordReset(email),
+      // Sets a new password with the emailed code, then signs in with it.
+      async resetPassword({ email, otp, password }) {
+        await api.resetPassword({ email, otp, password });
+        await api.signIn({ email, password });
+        const signedIn = await refreshMe();
+        setToast('Password changed. Welcome back!');
+        return signedIn;
+      },
       sendPhoneCode: (phone) => api.sendPhoneCode(phone),
       testCode: (phone) => api.testCode(phone).catch(() => ({ code: null })),
       // Signs in with a phone code, or (`link`) adds the verified number to the signed-in account.

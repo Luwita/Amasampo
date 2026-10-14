@@ -167,3 +167,38 @@ test('a seller resells another shop’s product with a margin', async () => {
   await waitFor(() => expect(document.querySelector('.error')).toBeNull());
   await waitFor(() => expect(api.__db().products.some((p) => p.shopId === 'shop_kabwe' && p.sourceProductId === 'prd_fan')).toBe(true));
 });
+
+test('a customer changes their password, and resets a forgotten one with an emailed code', async () => {
+  api.setToken(null);
+  renderAt('/login?join=buyer');
+  type(await screen.findByLabelText('Full name').then(() => 'Full name'), 'Mutale Banda');
+  type('Email', 'mutale@example.com');
+  type('Password', 'First-pass-1');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Create account' }).at(-1));
+  fireEvent.click(await screen.findByRole('button', { name: 'Skip for now' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Password & privacy' }));
+  type('Current password', 'wrong-pass-1');
+  type('New password', 'Second-pass-2');
+  fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+  expect(await screen.findByText('Invalid password')).toBeInTheDocument();
+  type('Current password', 'First-pass-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+  await waitFor(() => expect(api.__db().passwords['mutale@example.com']).toBe('Second-pass-2'));
+});
+
+test('forgot password: an emailed code sets a new one and signs in', async () => {
+  api.setToken(null);
+  renderAt('/login');
+  fireEvent.click(await screen.findByRole('button', { name: 'Forgot password?' }));
+  type('Email', 'nobody');
+  fireEvent.click(screen.getByRole('button', { name: 'Email me a code' }));
+  expect(await screen.findByText('Enter the email address of your account')).toBeInTheDocument();
+  type('Email', 'chanda@example.com');
+  fireEvent.click(screen.getByRole('button', { name: 'Email me a code' }));
+  type(await screen.findByLabelText('6-digit code').then(() => '6-digit code'), '123456');
+  type('New password', 'Brand-new-3');
+  api.__db().users.push({ id: 'usr_chanda', name: 'Chanda', email: 'chanda@example.com', phone: null, accountType: 'buyer', referralCode: 'ZMCHANDA' });
+  fireEvent.click(screen.getByRole('button', { name: 'Set new password' }));
+  expect(await screen.findByText(/Muli shani, Chanda/)).toBeInTheDocument();
+});

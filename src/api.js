@@ -127,6 +127,19 @@ export async function verifyPhone({ phone, code, link }) {
   startSession();
 }
 
+// Changes the password of the signed-in account (and signs out its other devices).
+export const changePassword = ({ currentPassword, newPassword }) =>
+  neon(
+    () => authClient.changePassword({ currentPassword, newPassword, revokeOtherSessions: true }),
+    "Couldn't change the password",
+  );
+
+// Forgotten password: a 6-digit code is emailed, then the code sets a new password.
+export const requestPasswordReset = (email) =>
+  neon(() => authClient.emailOtp.requestPasswordReset({ email }), "Couldn't send the code. Try again.");
+export const resetPassword = ({ email, otp, password }) =>
+  neon(() => authClient.emailOtp.resetPassword({ email, otp, password }), 'That code is not correct');
+
 export async function logout() {
   try {
     await authClient.signOut();

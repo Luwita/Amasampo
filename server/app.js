@@ -28,7 +28,7 @@ import { deliveryAdminRoutes, deliveryRoutes } from './routes/delivery.js';
 // `lookupPhone` and `verifyWebhook` instead.
 export function createApp(
   db,
-  { uploadDir, buildDir, sms, exposeCodes = false, adminPhones = [], adminEmails = [], production = false, auth = {} } = {},
+  { uploadDir, buildDir, sms, email, exposeCodes = false, adminPhones = [], adminEmails = [], production = false, auth = {} } = {},
 ) {
   const {
     baseUrl,
@@ -48,7 +48,7 @@ export function createApp(
     app.use('/api/auth', authProxy({ baseUrl, cookieSecret }));
     app.use(finishOAuthSignIn({ baseUrl, cookieSecret })); // the page Google sends people back to
   }
-  app.use('/api/webhooks/neon-auth', neonAuthWebhook(db, { sms, exposeCodes, verifyWebhook, adminPhones, adminEmails }));
+  app.use('/api/webhooks/neon-auth', neonAuthWebhook(db, { sms, email, exposeCodes, verifyWebhook, adminPhones, adminEmails }));
   app.use(express.json({ limit: '3mb' })); // room for one base64 photo
 
   app.get('/api/health', async (_req, res) => {

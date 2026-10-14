@@ -194,6 +194,18 @@ export async function verifyPhone({ phone, code, link }) {
   startSession(user);
 }
 
+export async function changePassword({ currentPassword, newPassword }) {
+  const user = currentUser();
+  if (db.passwords?.[user.email] !== currentPassword) throw new ApiError(400, 'Invalid password');
+  db.passwords[user.email] = newPassword;
+}
+export const requestPasswordReset = async () => ({ success: true });
+export async function resetPassword({ email, otp, password }) {
+  if (otp !== FAKE_CODE) throw new ApiError(400, 'Invalid OTP');
+  db.passwords ??= {};
+  db.passwords[email.toLowerCase()] = password;
+}
+
 export const me = async () => currentUser();
 export const logout = async () => {
   delete db.sessions[token];

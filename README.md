@@ -40,8 +40,10 @@ branch as the database:
   phone codes work on the live site only. Register it on the production branch:
   `neon neon-auth config webhook update --branch production --enabled --url https://<site>/api/webhooks/neon-auth --enabled-events send.otp`
   and add the site to the trusted domains: `neon neon-auth domain add https://<site> --branch production`.
-  With `send.otp` subscribed, Neon Auth stops sending its own emailed codes too; ZedMarket has no email sending
-  yet, so email verification and password-reset emails are not used.
+  With `send.otp` subscribed, Neon Auth stops sending its own emailed codes too, so the same webhook emails them
+  through [Resend](https://resend.com) (`RESEND_API_KEY`, `EMAIL_FROM` on a verified domain). That powers
+  **Forgot password?** on the sign-in page: an emailed 6-digit code sets a new password. Signed-in people change
+  their password under My account → Password & privacy.
 - **Owners** are `ADMIN_PHONES` (once verified on the account) and `ADMIN_EMAILS` (once Neon Auth has verified the
   address; on a development computer also before).
 - **Test mode:** `SHOW_SIGNIN_CODES=1` also shows phone codes on screen, except for staff and owners, whose codes are
@@ -269,7 +271,7 @@ shop (a shop owner who joins the team needs a different phone number).
   Report in the seller dashboard.
 - **QR codes**: every shop also has its own QR code in My shop → Promotions, linking to its shop page, to print for
   the counter or share.
-- **Sign-up QR codes**: codes for shop owners (`/login?join=seller`, leads on to shop setup) and customers
+- **Sign-up QR codes**: ready-made images for the live site are in [qr-codes/](qr-codes/); codes for shop owners (`/login?join=seller`, leads on to shop setup) and customers
   (`/login?join=buyer`), with a printable poster to download and WhatsApp sharing. They always use the address the
   site is on, so make them once the site is live.
 - **Marketing**: home page banners (shown before the standard slides, with an end date), voucher campaigns paid

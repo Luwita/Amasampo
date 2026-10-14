@@ -99,6 +99,49 @@ function ParcelActions({ order, shipment }) {
 }
 
 // The buyer's rights under the Data Protection Act: a copy of their data, and deleting the account.
+// Change the password of an account that signs in with email and password.
+function PasswordPanel() {
+  const { changePassword, notify } = useStore();
+  const [form, setForm] = useState({ current: '', next: '' });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const save = async (e) => {
+    e.preventDefault();
+    if (form.next.length < 8) return setError('Use a new password of at least 8 characters');
+    setBusy(true);
+    setError(null);
+    try {
+      await changePassword({ currentPassword: form.current, newPassword: form.next });
+      setForm({ current: '', next: '' });
+      notify('Password changed. Your other devices have been signed out.');
+    } catch (err) {
+      setError(/credential|password not found/i.test(err.message) ? 'This account signs in with Google, so it has no password.' : err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="card form-card narrow-card">
+      <h3>Change password</h3>
+      <form onSubmit={save} noValidate>
+        <div className="field">
+          <label htmlFor="pw-current">Current password</label>
+          <input id="pw-current" type="password" autoComplete="current-password" value={form.current} onChange={(e) => setForm((f) => ({ ...f, current: e.target.value }))} />
+        </div>
+        <div className="field">
+          <label htmlFor="pw-next">New password</label>
+          <input id="pw-next" type="password" autoComplete="new-password" value={form.next} onChange={(e) => setForm((f) => ({ ...f, next: e.target.value }))} />
+          <span className="muted small">At least 8 characters.</span>
+        </div>
+        {error && <p className="error">{error}</p>}
+        <button className="btn btn-primary btn-sm" disabled={busy}>
+          {busy ? 'Saving…' : 'Change password'}
+        </button>
+      </form>
+    </section>
+  );
+}
+
 function PrivacyPanel() {
   const { deleteAccount, myShop, notify } = useStore();
   const navigate = useNavigate();
@@ -330,7 +373,7 @@ export default function Account() {
               🎁 Invite & vouchers
             </button>
             <button className={tab === 'privacy' ? 'on' : ''} onClick={() => setParams({ tab: 'privacy' })}>
-              Privacy & data
+              Password & privacy
             </button>
           </>
         )}
@@ -395,7 +438,12 @@ export default function Account() {
         ))}
 
       {tab === 'quotes' && user && <BuyerPriceRequests />}
-      {tab === 'privacy' && user && <PrivacyPanel />}
+      {tab === 'privacy' && user && (
+        <>
+          <PasswordPanel />
+          <PrivacyPanel />
+        </>
+      )}
       {tab === 'invite' && user && <InvitePanel />}
 
       {tab === 'wishlist' &&

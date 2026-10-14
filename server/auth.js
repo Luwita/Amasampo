@@ -6,6 +6,7 @@ import { HttpError, newId, parse } from './http.js';
 import { toUser } from './mappers.js';
 import { getSettings } from './settings.js';
 import { consoleSms } from './sms.js';
+import { consoleEmail } from './email.js';
 import { notify } from './notify.js';
 
 // Accounts are run by Neon Auth (see neonAuth.js): people sign up with email or Google, then link and verify a
@@ -266,7 +267,10 @@ async function isStaffContact(db, owners, key) {
 
 // /api/webhooks/neon-auth: Neon Auth asks ZedMarket to deliver sign-in codes. Phone codes go out by SMS.
 // `verifyWebhook(rawBody, headers)` checks Neon's signature; requests that fail it are refused.
-export function neonAuthWebhook(db, { sms = consoleSms, exposeCodes = false, verifyWebhook, adminPhones = [], adminEmails = [] }) {
+export function neonAuthWebhook(
+  db,
+  { sms = consoleSms, email = consoleEmail, exposeCodes = false, verifyWebhook, adminPhones = [], adminEmails = [] },
+) {
   const router = Router();
   const owners = { phones: phoneSet(adminPhones), emails: emailSet(adminEmails) };
   router.post('/', express.raw({ type: () => true, limit: '100kb' }), async (req, res) => {
@@ -292,10 +296,21 @@ export function neonAuthWebhook(db, { sms = consoleSms, exposeCodes = false, ver
       }
     }
     if (!bySms) {
-      // ZedMarket has no email sending yet, so emailed codes only reach people in test mode.
-      console.warn(`[auth] an email code for ${to} was not sent: no email provider is set up`);
-      if (exposeCodes) return res.json({ ok: true });
-      throw new HttpError(503, 'Email codes are not available yet');
+      // Emailed codes: password reset, email verification or email sign-in.
+      const reset = /forget|reset|password/i.test(String(data.type ?? data.otp_type ?? ''));
+      const subject = reset ? 'Your Zed Market password reset code' : 'Your Zed Market code';
+      const text = `${reset ? 'Your code to set a new password' : 'Your Zed Market code'} is ${code}. It expires in 5 minutes. If you didn't ask for it, ignore this email.`;
+      if (email.provider === 'console') {
+        console.warn(`[auth] an email code for ${to} was not sent: no email provider is set up (RESEND_API_KEY, EMAIL_FROM)`);
+        if (exposeCodes) return res.json({ ok: true });
+        throw new HttpError(503, 'Email codes are not available yet');
+      }
+      try {
+        await email.send(to, subject, text);
+      } catch (err) {
+        if (!exposeCodes) throw err;
+      }
+      return res.json({ ok: true });
     }
     try {
       await sms.send(to, `Your Zed Market code is ${code}. It expires in 5 minutes.`);

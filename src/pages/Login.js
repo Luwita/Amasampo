@@ -10,7 +10,7 @@ const homeFor = (user) =>
 // Sign-up and sign-in, run by Neon Auth: email and password, or Google. A phone number is added right after
 // sign-up (by SMS code); once added, it can also be used to sign in with a code.
 export default function Login() {
-  const { user, signUp, signIn, signInWithGoogle } = useStore();
+  const { user, signUp, signIn, signInWithGoogle, requestPasswordReset, resetPassword } = useStore();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get('next');
@@ -28,6 +28,8 @@ export default function Login() {
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [reset, setReset] = useState({ code: '', password: '' });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const destination = (u) => (next?.startsWith('/') ? next : homeFor(u));
 
@@ -87,6 +89,64 @@ export default function Login() {
     </div>
   );
 
+  if (mode === 'reset') {
+    const send = (e) => {
+      e.preventDefault();
+      if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) return setError('Enter the email address of your account');
+      run(async () => {
+        await requestPasswordReset(form.email.trim());
+        setResetSent(true);
+        setBusy(false);
+      });
+    };
+    const save = (e) => {
+      e.preventDefault();
+      if (reset.password.length < 8) return setError('Use a new password of at least 8 characters');
+      run(() => resetPassword({ email: form.email.trim(), otp: reset.code.trim(), password: reset.password }));
+    };
+    return (
+      <div className="container section narrow">
+        <div className="card form-card auth">
+          <h2>Set a new password</h2>
+          {!resetSent ? (
+            <form onSubmit={send} noValidate>
+              <p className="muted small">We'll email you a 6-digit code.</p>
+              <div className="field">
+                <label htmlFor="r-email">Email</label>
+                <input id="r-email" type="email" value={form.email} onChange={set('email')} autoComplete="email" />
+              </div>
+              {error && <p className="error">{error}</p>}
+              <button className="btn btn-primary btn-block" disabled={busy}>
+                {busy ? 'Sending…' : 'Email me a code'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={save} noValidate>
+              <p className="muted small">
+                Enter the code we sent to <strong>{form.email}</strong> and choose a new password.
+              </p>
+              <div className="field">
+                <label htmlFor="r-code">6-digit code</label>
+                <input id="r-code" inputMode="numeric" maxLength={6} value={reset.code} onChange={(e) => setReset((r) => ({ ...r, code: e.target.value }))} />
+              </div>
+              <div className="field">
+                <label htmlFor="r-password">New password</label>
+                <input id="r-password" type="password" autoComplete="new-password" value={reset.password} onChange={(e) => setReset((r) => ({ ...r, password: e.target.value }))} />
+              </div>
+              {error && <p className="error">{error}</p>}
+              <button className="btn btn-primary btn-block" disabled={busy}>
+                {busy ? 'Saving…' : 'Set new password'}
+              </button>
+            </form>
+          )}
+          <button className="link-btn block center" onClick={() => { setMode('login'); setResetSent(false); setError(null); }}>
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (mode === 'phone') {
     return (
       <div className="container section narrow">
@@ -137,6 +197,11 @@ export default function Login() {
               autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
             />
             {mode === 'register' && <span className="muted small">At least 8 characters.</span>}
+            {mode === 'login' && (
+              <button type="button" className="link-btn small" onClick={() => { setMode('reset'); setError(null); }}>
+                Forgot password?
+              </button>
+            )}
           </div>
           {mode === 'register' && (
             <div className="field">

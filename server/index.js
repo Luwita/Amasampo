@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { cleanDatabaseUrl, createDb, migrate } from './db.js';
 import { loadDelivery } from './delivery.js';
 import { smsFromEnv } from './sms.js';
+import { emailFromEnv } from './email.js';
 import { startJobs } from './jobs.js';
 import { backfillDemoProducts, seedIfEmpty } from './seed.js';
 
@@ -45,6 +46,7 @@ if (process.env.SEED_DEMO === '1') {
 }
 
 const sms = smsFromEnv();
+const email = emailFromEnv();
 // Neon Auth runs sign-up and sign-in. Its URL comes from `neon env pull` locally and the host's settings live.
 const authUrl = process.env.NEON_AUTH_BASE_URL?.trim();
 const cookieSecret = process.env.NEON_AUTH_COOKIE_SECRET?.trim();
@@ -62,6 +64,7 @@ const list = (v) =>
     .filter(Boolean);
 const app = createApp(db, {
   sms,
+  email,
   uploadDir: process.env.UPLOAD_DIR ?? path.join(root, 'server', '.data', 'uploads'),
   buildDir: path.join(root, 'build'),
   // Shows sign-in codes on the sign-in screen: on a development computer without an SMS provider, or anywhere
@@ -83,6 +86,6 @@ if (process.env.SHOW_SIGNIN_CODES === '1') {
 
 app.listen(port, () =>
   console.log(
-    `Zed Market API on http://localhost:${port} (database: ${db.kind}${db.location ? ` in ${db.location}` : ''}; SMS: ${sms.provider})`,
+    `Zed Market API on http://localhost:${port} (database: ${db.kind}${db.location ? ` in ${db.location}` : ''}; SMS: ${sms.provider}; email: ${email.provider})`,
   ),
 );

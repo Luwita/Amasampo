@@ -31,12 +31,18 @@ services:
       # Owners: phone numbers they verify on their account, and/or email addresses, comma-separated.
       - key: ADMIN_PHONES
         sync: false
+      # The value is kept in Render (Environment), not here, because this repository is public.
       - key: ADMIN_EMAILS
-        value: noahluwita9@gmail.com
+        sync: false
       # Test mode is off: sign-in codes go only by SMS. "1" would also show them on screen (testing only;
       # never staff or owner codes). Set explicitly, because removing a key here doesn't remove it on Render.
       - key: SHOW_SIGNIN_CODES
         value: "0"
+      # Email (Resend): password-reset and other emailed codes. EMAIL_FROM must be on a domain verified in Resend.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: AT_USERNAME
         sync: false
       - key: AT_API_KEY

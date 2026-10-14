@@ -104,12 +104,13 @@ describe('sign-in codes from Neon Auth', () => {
   const otp = (phone, code = '482913') =>
     JSON.stringify({ event_type: 'send.otp', event_data: { otp_code: code, delivery_preference: 'sms' }, user: { phone_number: phone } });
 
-  const start = async ({ sms, exposeCodes = false }) => {
+  const start = async ({ sms, email, exposeCodes = false }) => {
     const db = await createDb({ url: '', dataDir: '' });
     await migrate(db);
     const server = createApp(db, {
       uploadDir: '.',
       sms,
+      email,
       exposeCodes,
       adminPhones: ['0955000001'],
       auth: { ...testAuth, verifyWebhook },
@@ -136,6 +137,27 @@ describe('sign-in codes from Neon Auth', () => {
       assert.equal((await app.testCode('0977123456')).error, 'Not found', 'codes are never shown outside test mode');
     } finally {
       await app.stop();
+    }
+  });
+
+  test('emailed codes (e.g. a password reset) go out by email; without an email provider they fail', async () => {
+    const mails = [];
+    const app = await start({ sms: consoleSms, email: { provider: 'test', send: async (to, subject, text) => mails.push({ to, subject, text }) } });
+    const reset = JSON.stringify({ event_type: 'send.otp', event_data: { otp_code: '555666', delivery_preference: 'email', type: 'forget-password' }, user: { email: 'Chanda@Example.com' } });
+    try {
+      assert.equal((await app.hook(reset)).status, 200);
+      assert.equal(mails.length, 1);
+      assert.equal(mails[0].to, 'chanda@example.com');
+      assert.equal(mails[0].subject, 'Your Zed Market password reset code');
+      assert.match(mails[0].text, /555666/);
+    } finally {
+      await app.stop();
+    }
+    const none = await start({ sms: consoleSms });
+    try {
+      assert.equal((await none.hook(reset)).status, 503);
+    } finally {
+      await none.stop();
     }
   });
 
