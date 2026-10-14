@@ -1,0 +1,26 @@
+# Render Blueprint: in Render choose New → Blueprint and pick this repository.
+# Settings marked `sync: false` are secrets: Render asks for them when the Blueprint is created.
+services:
+  - type: web
+    name: amasampo
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Neon's connection string (postgresql://...).
+      - key: DATABASE_URL
+        sync: false
+      # Owner phone numbers for the admin panel, e.g. 0977123456,0966123456
+      - key: ADMIN_PHONES
+        sync: false
+      - key: AT_USERNAME
+        sync: false
+      - key: AT_API_KEY
+        sync: false

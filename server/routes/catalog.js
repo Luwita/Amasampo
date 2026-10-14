@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireUser } from '../auth.js';
@@ -43,7 +41,7 @@ export async function saveShop(q, shop, s) {
   return row;
 }
 
-export function catalogRoutes(db, { uploadDir }) {
+export function catalogRoutes(db) {
   const router = Router();
   const recentUploads = new Map(); // userId -> upload times in the last hour (per server process)
 
@@ -204,8 +202,14 @@ export function catalogRoutes(db, { uploadDir }) {
     const bytes = Buffer.from(match[2], 'base64');
     if (bytes.length > 1_500_000) throw new HttpError(413, 'Photo is too large (max 1.5 MB)');
     const name = `${newId('img')}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`;
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(path.join(uploadDir, name), bytes);
+    // Kept in the database so photos survive restarts on hosts with a temporary disk.
+    await db.query('INSERT INTO uploads (name, content_type, data, size, uploaded_by) VALUES ($1, $2, $3, $4, $5)', [
+      name,
+      `image/${match[1]}`,
+      bytes,
+      bytes.length,
+      req.user.id,
+    ]);
     res.status(201).json({ url: `/uploads/${name}` });
   });
 

@@ -36,7 +36,7 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, a
 
   app.use('/api', authenticate(db, { adminPhones }));
   app.use('/api/auth', authRoutes(db, { sms, exposeCodes, adminPhones }));
-  app.use('/api', catalogRoutes(db, { uploadDir }));
+  app.use('/api', catalogRoutes(db));
   app.use('/api', reviewRoutes(db));
   app.use('/api/orders', orderRoutes(db));
   app.use('/api/seller', sellerRoutes(db));
@@ -60,7 +60,16 @@ export function createApp(db, { uploadDir, buildDir, sms, exposeCodes = false, a
   app.use('/api/me', voucherRoutes(db));
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
-  app.use('/uploads', express.static(uploadDir, { maxAge: '30d', immutable: true }));
+  // Photos are stored in the database. A photo's name never changes, so browsers may keep it for 30 days.
+  app.get('/uploads/:name', async (req, res, next) => {
+    if (!/^[\w.-]+$/.test(req.params.name)) return next();
+    const [photo] = await db.query('SELECT content_type, data FROM uploads WHERE name = $1', [req.params.name]);
+    if (!photo) return next();
+    res.set({ 'Content-Type': photo.content_type, 'Cache-Control': 'public, max-age=2592000, immutable' });
+    res.send(Buffer.from(photo.data));
+  });
+  // Photos saved to disk before they moved into the database.
+  if (uploadDir) app.use('/uploads', express.static(uploadDir, { maxAge: '30d', immutable: true }));
 
   // In production the same server also serves the built React app.
   if (buildDir && existsSync(buildDir)) {

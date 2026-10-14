@@ -245,6 +245,13 @@ describe('shops, products and orders', () => {
     const pixel =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
     const ok = await api('POST', '/api/uploads', { dataUrl: pixel }, seller.token);
+    // The photo is served from the database, as an image that browsers may cache.
+    const photo = await fetch(base + ok.body.url);
+    assert.equal(photo.status, 200);
+    assert.equal(photo.headers.get('content-type'), 'image/png');
+    assert.match(photo.headers.get('cache-control'), /max-age=2592000/);
+    assert.deepEqual(Buffer.from(await photo.arrayBuffer()), Buffer.from(pixel.split(',')[1], 'base64'));
+    assert.equal((await fetch(`${base}/uploads/img_missing.jpg`)).status, 404);
     assert.equal(ok.status, 201);
     const served = await fetch(base + ok.body.url);
     assert.equal(served.status, 200);

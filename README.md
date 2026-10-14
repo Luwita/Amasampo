@@ -87,8 +87,17 @@ React app (src/)  ──/api──▶  Express API (server/)  ──SQL──▶
 Copy `server/.env.example` to `server/.env` to change settings. For production:
 
 1. Create a Postgres database (e.g. Neon, Supabase or Render) and set `DATABASE_URL`.
-2. Set `NODE_ENV=production` and `UPLOAD_DIR` to persistent storage.
+2. Set `NODE_ENV=production`, `ADMIN_PHONES` and the Africa's Talking settings.
 3. `npm run build`, then `npm run server`. The API serves the built app too, so one process is enough.
+
+Product photos are stored in the database, so nothing needs a permanent disk. Node.js 22.9 or newer is needed.
+
+### Render + Neon
+
+[render.yaml](render.yaml) describes the service. In Render choose **New → Blueprint**, pick this repository, and
+fill in the settings it asks for: `DATABASE_URL` (Neon's connection string), `ADMIN_PHONES`, `AT_USERNAME` and
+`AT_API_KEY`. Every push to `main` deploys again; database changes are applied automatically when the server
+starts. On Render's free plan the server sleeps after a while without visitors and takes up to a minute to wake.
 
 The app can be installed on phones ("Add to home screen" / the Install button) once it is served over HTTPS.
 The service worker only runs in production builds, so it never serves stale files during development.
