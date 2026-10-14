@@ -9,6 +9,7 @@ import { pointsIn } from '../data/pickupPoints';
 import { parcelWeight } from '../data/pricing';
 import { formatLocation } from '../data/zambia';
 import { formatK } from '../utils/format';
+import { currentPosition, distanceLabel } from '../utils/geo';
 import { groupByShop } from './Cart';
 
 const PHONE = /^(\+?260|0)?[79]\d{8}$/;
@@ -34,6 +35,8 @@ export default function Checkout() {
   const [voucherId, setVoucherId] = useState('');
   const [voucherQuote, setVoucherQuote] = useState({ priced: null, error: null });
   const [pointId, setPointId] = useState('');
+  const [spot, setSpot] = useState(null); // the buyer's map position, for couriers priced by distance
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -54,7 +57,7 @@ export default function Checkout() {
   }, [user]);
 
   const ready = catalogStatus !== 'loading' && cartStatus !== 'loading' && items.every((i) => i.shop);
-  const to = { province: form.province, town: form.town };
+  const to = { province: form.province, town: form.town, ...(spot ?? {}) };
   const shipments = ready
     ? groupByShop(items).map(({ shop, items: lines }) => {
         const weightKg = parcelWeight(lines);
@@ -147,6 +150,18 @@ export default function Checkout() {
   const total = subtotal - discount - voucherDiscount + delivery;
   const discountFor = (shopId) => coupon?.priced.shipments.find((s) => s.shopId === shopId)?.discount ?? 0;
   const codAllowed = shipments.every((s) => s.chosen?.courier.cod);
+  const byDistance = shipments.some((s) => s.options.some((o) => o.courier.distance));
+  const locate = async () => {
+    setLocating(true);
+    try {
+      setSpot(await currentPosition());
+      setErrors((er) => ({ ...er, spot: null }));
+    } catch (err) {
+      setErrors((er) => ({ ...er, spot: err.message }));
+    } finally {
+      setLocating(false);
+    }
+  };
   const noMomo = shipments.filter((s) => !s.shop.takesMomo).map((s) => s.shop.name);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -253,9 +268,11 @@ export default function Checkout() {
                               ? `Collect in ${s.shop.town}`
                               : o.courier.collect
                                 ? `Collect from the ${o.courier.collect} in ${form.town} · ${o.eta}`
-                                : o.courier.id === 'yango' || o.courier.id === 'seller'
-                                  ? `To your door · ${o.eta}`
-                                  : o.eta}
+                                : o.courier.distance
+                                  ? `To your door · ${distanceLabel(o)} · ${o.eta}`
+                                  : o.courier.id === 'seller'
+                                    ? `To your door · ${o.eta}`
+                                    : o.eta}
                           </span>
                         </span>
                         <strong>{o.fee ? formatK(o.fee) : 'Free'}</strong>
@@ -272,6 +289,21 @@ export default function Checkout() {
                 )}
               </div>
             ))}
+            {byDistance && (
+              <div className="locate-box">
+                {spot ? (
+                  <p className="small">📍 Using your location for an exact Yango price. The rider gets it too.</p>
+                ) : (
+                  <p className="muted small">
+                    Yango charges by distance. Share where you are for the exact price (otherwise it's an estimate).
+                  </p>
+                )}
+                <button type="button" className="btn btn-outline btn-sm" onClick={locate} disabled={locating}>
+                  {locating ? 'Finding your location…' : spot ? '📍 Update my location' : '📍 Use my location'}
+                </button>
+                {errors.spot && <span className="error small">{errors.spot}</span>}
+              </div>
+            )}
             {usesPoint && points.length > 0 && (
               <div className="field point-picker">
                 <label htmlFor="co-point">📮 Collect from which Zed Market Point?</label>

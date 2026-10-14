@@ -989,6 +989,18 @@ select:focus {
   padding-left: 18px;
 }
 
+.locate-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 0;
+}
+.locate-box p {
+  margin: 0;
+  flex: 1 1 220px;
+}
+
 /* ---------- Order success ---------- */
 .success {
   padding: 32px;

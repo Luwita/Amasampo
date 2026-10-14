@@ -12,12 +12,32 @@ const BANDS = [
   ['province', 'Same province'],
   ['national', 'Other province'],
 ];
+// What each courier publishes (checked October 2026), so owners know which numbers still need confirming.
 const NOTES = {
   pickup: 'The buyer collects from the shop, so there is no fee.',
   seller: "Starting fees for shops' own riders. Each shop can set its own fees in its settings.",
-  yango: 'Same-town deliveries only, in the towns listed.',
+  yango:
+    "Priced by distance, like Yango's app. Starting fares are Yango's published Lusaka maximums (yango.com/lusaka/tariff): " +
+    'moto K10.17 for the first km then K4.95/km; car K19 for the first 1.5 km then K4.2/km plus K0.8/min. Rush hour can ' +
+    'cost more. Same-town only. Without both map positions a typical trip is assumed.',
+  platinum:
+    'No published rate card. Platinum advertises small parcels "across Zambia for just K30"; bales and heavy items ' +
+    'cost more. Ask their office for the per-kg rate.',
+  bus: 'Bus companies (Mazhandu, Juldan, Power Tools…) price parcels at the counter by size; nothing is published. ' +
+    'Ask at the bus station and enter what you agree.',
+  zampost: 'Zampost prices EMS by weight at the post office and publishes no domestic table. Ask your post office.',
   point: 'Offered for every shop, in towns that have an open Zed Market Point.',
 };
+const VEHICLES = [
+  ['moto', 'Motorbike'],
+  ['car', 'Car'],
+];
+const FARE_FIELDS = [
+  ['minFare', 'Minimum fare (K)'],
+  ['includedKm', 'km included'],
+  ['perKm', 'Each extra km (K)'],
+  ['perMin', 'Per minute (K)'],
+];
 const text = (v) => (v === null || v === undefined ? '' : String(v));
 
 function CourierEditor({ courier, saved, isOwner, onSaved }) {
@@ -31,7 +51,18 @@ function CourierEditor({ courier, saved, isOwner, onSaved }) {
     towns: (saved.towns ?? []).join(', '),
     cod: !!saved.cod,
     disabled: !!saved.disabled,
+    distance: saved.distance
+      ? {
+          ...Object.fromEntries(
+            VEHICLES.map(([v]) => [v, Object.fromEntries(FARE_FIELDS.map(([k]) => [k, text(saved.distance[v]?.[k])]))]),
+          ),
+          motoMaxKg: text(saved.distance.motoMaxKg),
+          typicalKm: text(saved.distance.typicalKm),
+        }
+      : null,
   }));
+  const setFare = (v, k) => (e) =>
+    setForm((f) => ({ ...f, distance: { ...f.distance, [v]: { ...f.distance[v], [k]: e.target.value } } }));
   const [busy, setBusy] = useState(false);
   const setBand = (group, b) => (e) => setForm((f) => ({ ...f, [group]: { ...f[group], [b]: e.target.value } }));
   const id = (k) => `dl-${courier.id}-${k}`;
@@ -49,6 +80,7 @@ function CourierEditor({ courier, saved, isOwner, onSaved }) {
         maxKg: form.maxKg === '' ? null : form.maxKg,
         cod: form.cod,
         disabled: form.disabled,
+        ...(form.distance ? { distance: form.distance } : {}),
         ...(courier.towns || saved.towns ? { towns: form.towns.split(',').map((t) => t.trim()).filter(Boolean) } : {}),
       };
       onSaved(await api.admin.saveCourier(courier.id, body));
@@ -78,6 +110,70 @@ function CourierEditor({ courier, saved, isOwner, onSaved }) {
           <label htmlFor={id('desc')}>Description shown to buyers</label>
           <input id={id('desc')} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
         </div>
+        {form.distance ? (
+          <>
+            <div className="table-wrap">
+              <table className="table rate-table">
+                <thead>
+                  <tr>
+                    <th />
+                    {VEHICLES.map(([v, label]) => (
+                      <th key={v}>{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {FARE_FIELDS.map(([k, label]) => (
+                    <tr key={k}>
+                      <th scope="row">{label}</th>
+                      {VEHICLES.map(([v, vLabel]) => (
+                        <td key={v}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={form.distance[v][k]}
+                            onChange={setFare(v, k)}
+                            placeholder={k === 'perMin' ? 'none' : ''}
+                            aria-label={`${courier.name} ${vLabel}: ${label}`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor={id('motokg')}>Heaviest parcel by motorbike (kg)</label>
+                <input
+                  id={id('motokg')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={form.distance.motoMaxKg}
+                  onChange={(e) => setForm((f) => ({ ...f, distance: { ...f.distance, motoMaxKg: e.target.value } }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={id('typkm')}>Typical trip when a location is missing (km)</label>
+                <input
+                  id={id('typkm')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={form.distance.typicalKm}
+                  onChange={(e) => setForm((f) => ({ ...f, distance: { ...f.distance, typicalKm: e.target.value } }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={id('eta')}>Delivery time</label>
+                <input id={id('eta')} value={form.eta.town} onChange={setBand('eta', 'town')} placeholder="e.g. 1–3 hours" />
+              </div>
+            </div>
+          </>
+        ) : (
         <div className="table-wrap">
           <table className="table rate-table">
             <thead>
@@ -131,7 +227,8 @@ function CourierEditor({ courier, saved, isOwner, onSaved }) {
             </tbody>
           </table>
         </div>
-        <p className="muted small">Leave a fee blank where this courier doesn't deliver.</p>
+        )}
+        {!form.distance && <p className="muted small">Leave a fee blank where this courier doesn't deliver.</p>}
         <div className="form-grid">
           <div className="field">
             <label htmlFor={id('max')}>Heaviest parcel (kg, blank = no limit)</label>

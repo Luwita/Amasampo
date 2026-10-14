@@ -15,6 +15,7 @@ import { useStore } from '../context/StoreContext';
 import { formatLocation } from '../data/zambia';
 import { useProduct, useProductSearch } from '../hooks/useProducts';
 import { formatK } from '../utils/format';
+import { mapLink } from '../utils/geo';
 
 // Send several parcels at once, e.g. after one trip to the bus station or courier office.
 function BatchDispatch({ orders }) {
@@ -119,6 +120,15 @@ function OrderCard({ order, shipment }) {
       </div>
       <div className="small muted">
         👤 {order.buyer.name} · {order.buyer.phone} · 📍 {order.shipping.address}, {formatLocation(order.shipping)}
+        {order.shipping.lat != null && (
+          <>
+            {' '}
+            ·{' '}
+            <a className="link" href={mapLink(order.shipping)} target="_blank" rel="noreferrer">
+              Buyer's location on the map (give it to the rider)
+            </a>
+          </>
+        )}
       </div>
       <div className="small">
         {shipment.paid

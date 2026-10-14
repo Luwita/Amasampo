@@ -15,6 +15,21 @@ const blank = (v) => (v === '' || v === undefined ? null : v);
 const fee = z.preprocess(blank, z.union([z.null(), z.coerce.number().min(0).max(100000)]));
 const byBand = (schema) => z.object(Object.fromEntries(BANDS.map((b) => [b, schema.optional()])));
 
+// Distance pricing (Yango): a fare per vehicle, the heaviest parcel a motorbike takes, and the trip assumed
+// when a map position is missing.
+const fare = z.object({
+  minFare: z.coerce.number().min(0).max(10000),
+  includedKm: z.coerce.number().min(0).max(100),
+  perKm: z.coerce.number().min(0).max(1000),
+  perMin: z.preprocess(blank, z.union([z.null(), z.coerce.number().min(0).max(100)])).optional(),
+});
+const distanceSchema = z.object({
+  moto: fare,
+  car: fare,
+  motoMaxKg: z.coerce.number().positive().max(1000),
+  typicalKm: z.coerce.number().positive().max(200),
+});
+
 const courierSchema = z.object({
   description: z.string().trim().min(3).max(200),
   rates: byBand(fee),
@@ -24,6 +39,7 @@ const courierSchema = z.object({
   towns: z.array(z.string()).max(120).optional(),
   cod: z.boolean(),
   disabled: z.boolean().default(false),
+  distance: distanceSchema.optional(),
 });
 
 const pointSchema = z
@@ -76,6 +92,8 @@ export function deliveryAdminRoutes(db) {
     const courier = getCourier(req.params.id);
     if (!courier) throw new HttpError(404, 'Unknown courier');
     const body = parse(courierSchema, req.body);
+    if (courier.distance && !body.distance) throw new HttpError(400, `Give ${courier.name}'s fares per km`);
+    if (!courier.distance) delete body.distance;
     if (body.towns) {
       const known = new Set(provinces.flatMap((p) => p.towns));
       const unknown = body.towns.find((t) => !known.has(t));
@@ -89,9 +107,12 @@ export function deliveryAdminRoutes(db) {
          ON CONFLICT (key) DO UPDATE SET value = $1, updated_by = $2, updated_at = now()`,
         [JSON.stringify(saved), req.user.id],
       );
-      const rates = BANDS.filter((b) => body.rates[b] != null)
-        .map((b) => `${b} K${body.rates[b]}`)
-        .join(', ');
+      const d = body.distance;
+      const rates = d
+        ? `moto K${d.moto.minFare} + K${d.moto.perKm}/km, car K${d.car.minFare} + K${d.car.perKm}/km`
+        : BANDS.filter((b) => body.rates[b] != null)
+            .map((b) => `${b} K${body.rates[b]}`)
+            .join(', ');
       await logAdmin(t, req.user.id, 'courier rates saved', 'courier', courier.id, `${courier.name}: ${rates || 'no rates'}${body.disabled ? ' (switched off)' : ''}`);
     });
     res.json(publicView(await loadDelivery(db)));

@@ -191,9 +191,9 @@ describe('weights, options, reviews and seller tools', () => {
     assert.equal(yango.status, 409);
     assert.match(yango.body.error, /Yango Delivery can't carry 90 kg/);
 
-    const platinum = await order('platinum', 10); // 90 kg in the same town: K60 + 85 extra kg × K3
+    const platinum = await order('platinum', 10); // 90 kg in the same town: K30 + 85 extra kg × K3
     assert.equal(platinum.status, 201, JSON.stringify(platinum.body));
-    assert.equal(platinum.body.delivery, 60 + 85 * 3);
+    assert.equal(platinum.body.delivery, 30 + 85 * 3);
   });
 
   test('reviews: only after delivery, once, by the buyer; ratings update', async () => {

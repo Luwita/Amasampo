@@ -15,6 +15,7 @@ import { checkChoice } from '../data/options';
 import { formatLocation } from '../data/zambia';
 import { useProduct, useProductSearch } from '../hooks/useProducts';
 import { discountPct, formatCount, formatK } from '../utils/format';
+import { distanceLabel } from '../utils/geo';
 
 function DeliveryOptions({ shop, weightKg }) {
   const { location, setLocation } = useStore();
@@ -60,7 +61,13 @@ function DeliveryOptions({ shop, weightKg }) {
               <span className="d-name">
                 {o.courier.name}
                 <span className="muted small block">
-                  {o.courier.id === 'pickup' ? `At ${shop.area ? `${shop.area}, ` : ''}${shop.town}` : o.eta}
+                  {o.courier.id === 'pickup'
+                    ? `At ${shop.area ? `${shop.area}, ` : ''}${shop.town}`
+                    : o.courier.distance
+                      ? `${o.eta} · price for ${distanceLabel(o)}`
+                      : o.courier.collect
+                        ? `${o.eta} · collect from the ${o.courier.collect}`
+                        : o.eta}
                 </span>
               </span>
               <strong>{o.fee ? formatK(o.fee) : 'Free'}</strong>

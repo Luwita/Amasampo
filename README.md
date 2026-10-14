@@ -274,6 +274,20 @@ with the order number and ID; checkout, the order page and the "on its way" text
 | Zampost EMS, collect at the post office | ✓ | ✓ | ✓ |
 | Zed Market Point (off until staff switch it on in Admin → Delivery) | ✓ | ✓ | ✓ |
 
+**How each courier charges** (what they publish, checked October 2026; owners confirm the real rates in Admin →
+Delivery, where these notes are shown too):
+
+- **Yango** charges like a ride, by distance. The starting fares are Yango's published Lusaka maximums: motorbike K10.17
+  for the first km then K4.95 per km; car (parcels over 10 kg, up to 20 kg) K19 for the first 1.5 km then K4.20 per km
+  plus K0.80 per minute. The trip is measured between the shop's and the buyer's map positions (straight line × 1.3
+  for roads). Shops set their position once in their settings, and buyers can share theirs at checkout; without
+  both, an 8 km trip is assumed and the price is shown as an estimate. The buyer's position is shown to the shop to
+  give the rider. Yango runs in Lusaka, Kitwe, Ndola and Solwezi.
+- **Platinum Couriers** publishes no rate card; it advertises small parcels "across Zambia for just K30", so that is
+  the starting fee, plus a per-kg rate for heavy parcels to confirm with them.
+- **Bus parcels** and **Zampost EMS** are priced at the counter by size and weight, with no published table; the
+  starting values are placeholders to replace with what the bus station and post office quote.
+
 Base fees cover a parcel up to 5 kg; heavier parcels pay a per-kg rate, and couriers with a weight limit
 (e.g. Yango 20 kg, Zampost 30 kg) are not offered for heavier parcels. Every product has a weight per unit.
 The values in [src/data/couriers.js](src/data/couriers.js) are only **starting values**. Owners enter the rates

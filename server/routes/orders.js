@@ -87,7 +87,7 @@ async function priceForBuyer(q, user, body, lock) {
       lines: body.items,
       getProduct: (id) => products.find((p) => p.id === id),
       getShop: (id) => shops.find((s) => s.id === id),
-      to: { province: body.shipping.province, town: body.shipping.town },
+      to: { province: body.shipping.province, town: body.shipping.town, lat: body.shipping.lat, lng: body.shipping.lng },
       picks: body.couriers,
       payment: body.payment,
       coupons,
@@ -157,8 +157,8 @@ export function orderRoutes(db) {
       );
       const [row] = await t.query(
         `INSERT INTO orders (id, buyer_id, buyer_name, buyer_phone, province, town, address, payment_method,
-                             payment_status, subtotal, discount, delivery, total, voucher_id, voucher_discount)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+                             payment_status, subtotal, discount, delivery, total, voucher_id, voucher_discount, lat, lng)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
         [
           id,
           req.user.id,
@@ -175,6 +175,8 @@ export function orderRoutes(db) {
           priced.total,
           voucherRow?.id ?? null,
           priced.voucherDiscount,
+          body.shipping.lat ?? null,
+          body.shipping.lng ?? null,
         ],
       );
       if (voucherRow) await t.query('UPDATE vouchers SET used_order_id = $2 WHERE id = $1', [voucherRow.id, id]);

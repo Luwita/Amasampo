@@ -13,6 +13,10 @@ const money = z.coerce.number().positive().max(10_000_000);
 const optionalRate = z.union([z.coerce.number().min(0).max(100_000), z.literal(''), z.null()]).optional();
 const phone = z.string().refine((p) => PHONE.test(p.replace(/\s/g, '')), 'Enter a valid Zambian phone number');
 
+// Map positions inside Zambia (with a margin), or nothing.
+const mapLat = z.union([z.coerce.number().min(-19).max(-7.5), z.null()]).optional();
+const mapLng = z.union([z.coerce.number().min(21).max(34.5), z.null()]).optional();
+
 const location = {
   province: z.string().refine((p) => getProvince(p), 'Choose a valid province'),
   town: z.string().min(1, 'Choose a town'),
@@ -32,6 +36,9 @@ export const shopSchema = z
     about: z.string().trim().max(1000).optional().nullable(),
     openingHours: z.string().trim().max(120).optional().nullable(),
     vatRegistered: z.boolean().default(false),
+    // The shop's map position, for pricing deliveries by distance (optional).
+    lat: mapLat,
+    lng: mapLng,
     // Where buyers send Mobile Money for their orders.
     momoNetwork: z.enum(MOMO_NETWORK_IDS, { message: 'Choose the network of your Mobile Money number' }),
     momoNumber: z
@@ -119,6 +126,8 @@ export const orderSchema = z.object({
       phone,
       ...location,
       address: z.string().trim().min(3, 'Enter a street, plot number or landmark').max(200),
+      lat: mapLat,
+      lng: mapLng,
     })
     .refine(townInProvince, 'That town is not in the selected province'),
 });
@@ -126,7 +135,9 @@ export const orderSchema = z.object({
 // A price preview only needs to know where the order is going.
 export const orderQuoteSchema = z.object({
   ...cartFields,
-  shipping: z.object(location).refine(townInProvince, 'That town is not in the selected province'),
+  shipping: z
+    .object({ ...location, lat: mapLat, lng: mapLng })
+    .refine(townInProvince, 'That town is not in the selected province'),
 });
 
 const couponCode = z

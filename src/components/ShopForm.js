@@ -4,6 +4,7 @@ import { categories, momoNetworks } from '../data/catalog';
 import { shopCouriers as couriers } from '../data/couriers';
 import { DEFAULT_LOCATION } from '../data/zambia';
 import LocationFields from './LocationFields';
+import { currentPosition, mapLink } from '../utils/geo';
 
 const PHONE = /^(\+?260|0)?[79]\d{8}$/;
 
@@ -41,7 +42,22 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
     momoNetwork: initial?.momoNetwork ?? '',
     momoNumber: initial?.momoNumber ?? '',
     momoName: initial?.momoName ?? '',
+    lat: initial?.lat ?? null,
+    lng: initial?.lng ?? null,
   });
+  const [locating, setLocating] = useState(false);
+  const locate = async () => {
+    setLocating(true);
+    try {
+      const pos = await currentPosition();
+      setForm((f) => ({ ...f, ...pos }));
+      setErrors((er) => ({ ...er, position: null }));
+    } catch (err) {
+      setErrors((er) => ({ ...er, position: err.message }));
+    } finally {
+      setLocating(false);
+    }
+  };
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -137,6 +153,24 @@ export default function ShopForm({ initial, onSubmit, submitLabel, withOwner = f
         />
       </div>
       {input('area', 'Street, market or area', { placeholder: 'e.g. Shop 14, Kamwala Market' })}
+      <div className="field">
+        <span className="label">Shop's position on the map (for Yango prices)</span>
+        <p className="muted small">
+          Press this while you are at your shop. Yango charges by distance, so buyers then see the exact delivery
+          price to their door.
+        </p>
+        <div className="pdp-buttons">
+          <button type="button" className="btn btn-outline btn-sm" onClick={locate} disabled={locating}>
+            {locating ? 'Finding your location…' : form.lat != null ? '📍 Update to where I am now' : '📍 Use my current location'}
+          </button>
+          {form.lat != null && (
+            <a className="link small" href={mapLink(form)} target="_blank" rel="noreferrer">
+              Saved: check it on the map
+            </a>
+          )}
+        </div>
+        {errors.position && <span className="error">{errors.position}</span>}
+      </div>
 
       <h3>Getting paid</h3>
       <p className="muted small">

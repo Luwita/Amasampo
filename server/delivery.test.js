@@ -115,7 +115,7 @@ describe('delivery settings', () => {
   test('until staff save real rates, the starting values are marked as not confirmed', async () => {
     const d = (await api('GET', '/api/delivery')).body;
     assert.equal(d.couriers.platinum.confirmed, false);
-    assert.equal(d.couriers.platinum.rates.town, 60);
+    assert.equal(d.couriers.platinum.rates.town, 30);
     assert.equal(d.pointsConfirmed, false);
     assert.ok(d.points.every((p) => p.example));
   });
@@ -127,7 +127,7 @@ describe('delivery settings', () => {
       { items: [{ productId: fanId, qty: 1 }], shipping: lusaka, couriers: { [seller.shopId]: 'platinum' }, payment: 'momo' },
       buyer.token,
     );
-    assert.equal(placed.body.delivery, 60);
+    assert.equal(placed.body.delivery, 30);
 
     assert.equal((await api('PUT', '/api/admin/delivery/couriers/platinum', platinum, staff.token)).status, 403);
     assert.equal((await api('PUT', '/api/admin/delivery/couriers/platinum', platinum, buyer.token)).status, 403);
@@ -138,7 +138,7 @@ describe('delivery settings', () => {
     assert.equal((await quote('platinum')).body.delivery, 70);
     assert.equal((await quote('platinum', kitwe)).body.delivery, 180);
     const [old] = (await api('GET', '/api/orders/mine', undefined, buyer.token)).body;
-    assert.equal(old.delivery, 60, 'past orders keep the fee they were charged');
+    assert.equal(old.delivery, 30, 'past orders keep the fee they were charged');
 
     const log = (await api('GET', '/api/admin/actions', undefined, owner.token)).body;
     assert.ok(log.some((a) => a.action === 'courier rates saved' && /town K70/.test(a.note)));
@@ -211,5 +211,58 @@ describe('collecting from the courier office', () => {
     const [note] = (await api('GET', '/api/notifications', undefined, buyer.token)).body;
     assert.equal(note.title, 'On its way to the Platinum Couriers office in Lusaka');
     assert.match(note.body, /tracking PC123 · Collect it with order number ZM-\w+ and your ID/);
+  });
+});
+
+describe('Yango priced by distance', () => {
+  test('the shop and buyer map positions set the fare, and the buyer position is kept for the rider', async () => {
+    const shop = (await api('GET', `/api/shops/${seller.shopId}`, undefined, seller.token)).body;
+    const patch = await api(
+      'PATCH',
+      `/api/shops/${seller.shopId}`,
+      { ...shop, couriers: [...shop.couriers, 'yango'], lat: -15.4167, lng: 28.2833, ownRates: null },
+      seller.token,
+    );
+    assert.equal(patch.status, 200, JSON.stringify(patch.body));
+    assert.equal(patch.body.lat, -15.4167);
+    assert.equal(
+      (await api('PATCH', `/api/shops/${seller.shopId}`, { ...shop, lat: 51.5, lng: -0.1 }, seller.token)).status,
+      400,
+      'positions outside Zambia are refused',
+    );
+
+    const estimate = await quote('yango');
+    assert.equal(estimate.body.delivery, 45, 'no buyer position: a typical 8 km trip');
+    const placed = await api(
+      'POST',
+      '/api/orders',
+      {
+        items: [{ productId: fanId, qty: 1 }],
+        shipping: { ...lusaka, lat: -15.4467, lng: 28.2833 },
+        couriers: { [seller.shopId]: 'yango' },
+        payment: 'momo',
+      },
+      buyer.token,
+    );
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.delivery, 27, '4.3 km by road');
+    assert.deepEqual([placed.body.shipping.lat, placed.body.shipping.lng], [-15.4467, 28.2833]);
+  });
+
+  test('owners change the per-km fares', async () => {
+    const body = {
+      description: 'Yango to your door.',
+      rates: {},
+      perKg: {},
+      maxKg: 20,
+      eta: { town: '1–3 hours' },
+      towns: ['Lusaka'],
+      cod: true,
+      distance: { moto: { minFare: 12, includedKm: 1, perKm: 5 }, car: { minFare: 20, includedKm: 1.5, perKm: 5, perMin: 1 }, motoMaxKg: 10, typicalKm: 8 },
+    };
+    const { distance, ...withoutFares } = body;
+    assert.equal((await api('PUT', '/api/admin/delivery/couriers/yango', withoutFares, owner.token)).status, 400);
+    assert.equal((await api('PUT', '/api/admin/delivery/couriers/yango', body, owner.token)).status, 200);
+    assert.equal((await quote('yango')).body.delivery, 12 + 7 * 5);
   });
 });

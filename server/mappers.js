@@ -36,6 +36,8 @@ export const toShop = (row) => ({
   openingHours: row.opening_hours ?? null,
   vatRegistered: row.vat_registered ?? false,
   takesMomo: !!row.momo_number,
+  lat: num(row.lat),
+  lng: num(row.lng),
   since: row.since,
 });
 
@@ -86,7 +88,7 @@ export const toOrder = (order, shipments) => {
     id: order.id,
     date: order.created_at,
     buyer: { name: order.buyer_name, phone: order.buyer_phone },
-    shipping: { province: order.province, town: order.town, address: order.address },
+    shipping: { province: order.province, town: order.town, address: order.address, lat: num(order.lat), lng: num(order.lng) },
     payment: order.payment_method,
     payByMomo,
     paid: live.length > 0 && live.every(isPaid),

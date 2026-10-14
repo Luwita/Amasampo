@@ -132,9 +132,10 @@ test('the owner sets a real courier price and buyers see it at checkout', async 
   api.setToken(ownerToken);
   const owner = renderAt('/admin?tab=delivery');
   expect((await screen.findAllByText(/Starting values, not confirmed/)).length).toBeGreaterThan(0);
-  type('Yango Delivery fee, Same town', '55');
+  // Yango is priced by distance: K20 for the first km, then K4.95/km over a typical 8 km trip = K54.65 → K55.
+  type('Yango Delivery Motorbike: Minimum fare (K)', '20');
   fireEvent.click(screen.getByRole('button', { name: 'Save Yango Delivery' }));
-  await waitFor(() => expect(api.__db().delivery.couriers.yango.rates.town).toBe('55'));
+  await waitFor(() => expect(api.__db().delivery.couriers.yango.distance.moto.minFare).toBe('20'));
   owner.unmount();
 
   const buyerToken = api.__signIn({ name: 'Chipo Banda', phone: '0966111000' });

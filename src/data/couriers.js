@@ -1,8 +1,15 @@
 import { pointsIn } from './pickupPoints.js';
 
-// Zambian delivery options a shop can offer, with fees (ZMW) and times per distance band.
-// The values below are only starting points: staff enter the rates agreed with each courier in
-// Admin → Delivery, which are saved in the database and applied with applyCourierConfig().
+// Zambian delivery options a shop can offer, with fees (ZMW) and times.
+// The values below are starting points from what each courier publishes (October 2026); staff enter the rates
+// agreed with each courier in Admin → Delivery, which are saved in the database and applied with
+// applyCourierConfig().
+//
+// Two ways of pricing:
+//  - by distance (`distance`): Yango charges like a ride: a minimum fare covering the first km, then a fee per km
+//    of the trip (and, by car, per minute). The trip is measured between the shop's and the buyer's map positions;
+//    without them a typical trip length is assumed and the price is shown as an estimate.
+//  - by band (`rates`): the other couriers charge per parcel by how far it goes and how heavy it is.
 //   town     = seller and buyer in the same town
 //   province = same province, different town
 //   national = different provinces
@@ -35,12 +42,19 @@ export const couriers = [
     name: 'Yango Delivery',
     icon: '🟡',
     description: 'Delivered to your door by a Yango rider within the same town.',
-    rates: { town: 45 },
-    perKg: { town: 5 },
-    maxKg: 20, // motorbike and car deliveries
+    // Yango's Lusaka tariff (yango.com/lusaka/tariff): "Delivery by moto" and "Delivery by Car", in-city rates.
+    // These are Yango's maximum rates; rush-hour prices can be higher and the shop pays Yango in its app.
+    distance: {
+      moto: { minFare: 10.17, includedKm: 1, perKm: 4.95 },
+      car: { minFare: 19, includedKm: 1.5, perKm: 4.2, perMin: 0.8 },
+      motoMaxKg: 10, // heavier parcels go by car
+      typicalKm: 8, // assumed trip when a map position is missing
+    },
+    rates: {},
+    maxKg: 20,
     eta: { town: '1–3 hours' },
-    // Towns where same-town on-demand delivery is offered. Keep in line with Yango's current coverage.
-    towns: ['Lusaka', 'Ndola', 'Kitwe', 'Livingstone', 'Kabwe', 'Chingola'],
+    // Towns where Yango runs in Zambia (Lusaka, Kitwe, Ndola and Solwezi as of October 2026).
+    towns: ['Lusaka', 'Kitwe', 'Ndola', 'Solwezi'],
     cod: true,
   },
   {
@@ -49,7 +63,8 @@ export const couriers = [
     icon: '📦',
     description: 'Collect your parcel from the Platinum Couriers office in your town.',
     collect: 'Platinum Couriers office',
-    rates: { town: 60, province: 95, national: 160 },
+    // Platinum advertises small parcels "across Zambia for just K30" (no published rate card); bales cost more.
+    rates: { town: 30, province: 30, national: 30 },
     perKg: { town: 3, province: 5, national: 8 },
     maxKg: 100,
     eta: { town: 'Same day', province: '1–2 days', national: '2–3 days' },
@@ -97,7 +112,7 @@ export const couriers = [
 ];
 
 // Fields staff can change in Admin → Delivery. Everything else (id, icon, how a courier works) stays in code.
-export const EDITABLE_COURIER_FIELDS = ['description', 'rates', 'perKg', 'maxKg', 'eta', 'towns', 'cod', 'disabled'];
+export const EDITABLE_COURIER_FIELDS = ['description', 'rates', 'perKg', 'maxKg', 'eta', 'towns', 'cod', 'disabled', 'distance'];
 const DEFAULT_COURIERS = JSON.parse(JSON.stringify(couriers));
 
 // Replaces the editable fields with saved values (or the defaults for couriers with nothing saved).
@@ -134,13 +149,40 @@ export function band(from, to) {
 
 export const bandRank = { town: 0, province: 1, national: 2 };
 
+// Road distance in km between two map positions ({ lat, lng }), or null if either is missing.
+// Straight-line distance × 1.3, the usual allowance for roads not running straight.
+export function roadKm(from, to) {
+  if (![from?.lat, from?.lng, to?.lat, to?.lng].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const rad = (d) => (d * Math.PI) / 180;
+  const a =
+    Math.sin(rad(to.lat - from.lat) / 2) ** 2 +
+    Math.cos(rad(from.lat)) * Math.cos(rad(to.lat)) * Math.sin(rad(to.lng - from.lng) / 2) ** 2;
+  return Math.round(6371 * 2 * Math.asin(Math.sqrt(a)) * 1.3 * 10) / 10;
+}
+
+// A Yango-style fare: minimum fare for the first km, then per km (and per minute by car, at ~25 km/h in town).
+function distanceFare(pricing, km, weightKg) {
+  const vehicle = weightKg > pricing.motoMaxKg ? 'car' : 'moto';
+  const t = pricing[vehicle];
+  const minutes = (km / 25) * 60;
+  const fee = Number(t.minFare) + Math.max(0, km - Number(t.includedKm)) * Number(t.perKm) + minutes * Number(t.perMin ?? 0);
+  return { fee: Math.ceil(fee), vehicle };
+}
+
 // Price and time for one courier taking a parcel of `weightKg` from a shop to a buyer, or null if not offered.
+// `to` may carry the buyer's map position (lat, lng) for couriers priced by distance.
 export function quote(courierId, shop, to, weightKg = 1) {
   const courier = getCourier(courierId);
   if (!courier || courier.disabled) return null;
   const b = band(shop, to);
   if (courier.towns && (b !== 'town' || !courier.towns.includes(shop.town))) return null;
   if (courier.maxKg && weightKg > courier.maxKg) return null;
+  if (courier.distance) {
+    const measured = roadKm(shop, to);
+    const km = measured ?? Number(courier.distance.typicalKm);
+    const { fee, vehicle } = distanceFare(courier.distance, km, weightKg);
+    return { courier, fee, eta: courier.eta[b], band: b, weightKg, km, estimated: measured === null, vehicle };
+  }
   if (courier.id === 'point' && !pointsIn(to).length) return null;
   const rates = courier.id === 'seller' && shop.ownRates ? { ...courier.rates, ...shop.ownRates } : courier.rates;
   if (rates[b] === undefined || rates[b] === null || rates[b] === '') return null;

@@ -15,7 +15,8 @@ export async function saveShop(q, shop, s) {
   const [row] = await q.query(
     `UPDATE shops SET name = $2, logo = $3, category = $4, province = $5, town = $6, area = $7, phone = $8,
             couriers = $9, own_rates = $10, tpin = $11, vat_registered = $12,
-             banner = $13, about = $14, opening_hours = $15, momo_network = $16, momo_number = $17, momo_name = $18
+             banner = $13, about = $14, opening_hours = $15, momo_network = $16, momo_number = $17, momo_name = $18,
+             lat = $19, lng = $20
       WHERE id = $1 RETURNING *`,
     [
       shop.id,
@@ -36,6 +37,8 @@ export async function saveShop(q, shop, s) {
       s.momoNetwork,
       normalizePhone(s.momoNumber),
       s.momoName,
+      s.lat ?? null,
+      s.lng ?? null,
     ],
   );
   return row;
@@ -105,8 +108,9 @@ export function catalogRoutes(db) {
       return t.query(
         `INSERT INTO shops (id, owner_id, name, logo, category, province, town, area, phone, couriers, own_rates, since,
                             tpin, vat_registered, owner_full_name, nrc, pacra, momo_network, momo_number, momo_name,
-                            verification)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'pending')
+                            lat, lng, verification)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+                 'pending')
          RETURNING *`,
         [
           newId('shop'),
@@ -129,6 +133,8 @@ export function catalogRoutes(db) {
           s.momoNetwork,
           normalizePhone(s.momoNumber),
           s.momoName,
+          s.lat ?? null,
+          s.lng ?? null,
         ],
       );
     });
