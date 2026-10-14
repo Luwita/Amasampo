@@ -33,10 +33,10 @@ services:
         sync: false
       - key: ADMIN_EMAILS
         value: noahluwita9@gmail.com
-      # Test mode: phone sign-in codes are also shown on screen (never staff or owner codes).
-      # Remove before real customers use the site; the admin overview warns while it is on.
+      # Test mode is off: sign-in codes go only by SMS. "1" would also show them on screen (testing only;
+      # never staff or owner codes). Set explicitly, because removing a key here doesn't remove it on Render.
       - key: SHOW_SIGNIN_CODES
-        value: "1"
+        value: "0"
       - key: AT_USERNAME
         sync: false
       - key: AT_API_KEY
