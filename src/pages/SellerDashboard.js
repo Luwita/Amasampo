@@ -6,6 +6,7 @@ import { CancelParcel, ShopCases } from '../components/Cases';
 import { ShopPriceRequests } from '../components/PriceRequests';
 import VerificationPanel, { ShopNotices } from '../components/Verification';
 import Promotions from '../components/Promotions';
+import { QrCard } from '../components/AdminQr';
 import { ProductImage } from '../components/ProductCard';
 import ProductForm from '../components/ProductForm';
 import { SalesReport, ShopReviews } from '../components/SellerInsights';
@@ -594,7 +595,20 @@ export default function SellerDashboard() {
 
       {tab === 'quotes' && <ShopPriceRequests />}
 
-      {tab === 'promotions' && <Promotions shopId={myShop.id} />}
+      {tab === 'promotions' && (
+        <>
+          <QrCard
+            code={{
+              id: `shop-${myShop.id}`,
+              title: myShop.name,
+              who: "Your shop's QR code: print it for your counter or share it",
+              path: `/store/${myShop.id}`,
+              text: 'Scan to see our products and order on Zed Market. Pay by Mobile Money or on delivery.',
+            }}
+          />
+          <Promotions shopId={myShop.id} />
+        </>
+      )}
 
       {tab === 'report' && (
         <>

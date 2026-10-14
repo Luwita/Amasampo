@@ -1452,7 +1452,7 @@ Object.assign(admin, {
 });
 
 // ---------- Staff, settings and acting for shops ----------
-const defaultSettings = { commissionRate: 0.05, welcomeVoucher: 50, referralReward: 50, voucherMinSpend: 300, voucherDays: 60 };
+const defaultSettings = { commissionRate: 0.05, welcomeVoucher: 50, referralReward: 50, voucherMinSpend: 300, voucherDays: 60, unpaidCancelHours: 24 };
 const settingsNow = () => ({ ...defaultSettings, ...(db.settings ?? {}) });
 export const settings = async () => copy(settingsNow());
 const owner = () => {
@@ -1511,6 +1511,17 @@ Object.assign(admin, {
     const product = db.products.find((p) => p.id === id);
     Object.assign(product, body);
     return copy(product);
+  },
+  async confirmPayment(orderId, shopId, why) {
+    staff();
+    const order = db.orders.find((o) => o.id === orderId);
+    const shipment = order.shipments.find((x) => x.shopId === shopId);
+    if (shipment.paid) throw new ApiError(409, 'This payment has already been confirmed');
+    shipment.paid = true;
+    order.paid = order.shipments.filter((s) => s.status !== 'cancelled').every((s) => s.paid);
+    log('payment confirmed', 'order', orderId, why);
+    note(order.buyerId, 'payment', 'The shop received your payment', `Order ${orderId}`, '/account');
+    return copy(order);
   },
   async setParcelStatus(orderId, shopId, { status, note: why }) {
     staff();

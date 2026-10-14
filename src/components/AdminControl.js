@@ -77,9 +77,21 @@ export function EditProduct({ productId, onDone }) {
 }
 
 // Move a parcel along for a shop, e.g. when the courier confirms delivery by phone.
-export function ParcelControls({ orderId, shipment, run }) {
+// Moving a parcel along for a shop. A Mobile Money parcel must have its payment confirmed before it is sent.
+export function ParcelControls({ orderId, shipment, payByMomo = false, run }) {
   const next = { pending: 'dispatched', dispatched: 'delivered' }[shipment.status];
   if (!next) return null;
+  if (payByMomo && !shipment.paid && shipment.status === 'pending') {
+    return (
+      <ReasonButton
+        label="Payment received"
+        placeholder="How do you know? e.g. Shop confirmed by phone"
+        onConfirm={(note) =>
+          run(() => api.admin.confirmPayment(orderId, shipment.shopId, note), 'Payment confirmed; the buyer was told')
+        }
+      />
+    );
+  }
   return (
     <ReasonButton
       label={next === 'dispatched' ? 'Mark as sent' : 'Mark as delivered'}
@@ -160,6 +172,7 @@ const SETTING_FIELDS = [
   ['referralReward', 'Reward for the inviter (K)', 1, 'Given when the friend’s first order is delivered.'],
   ['voucherMinSpend', 'Minimum spend to use a voucher (K)', 1, null],
   ['voucherDays', 'Vouchers last (days)', 1, null],
+  ['unpaidCancelHours', 'Cancel unpaid Mobile Money orders after (hours)', 1, 'The buyer is reminded halfway.'],
 ];
 
 export function Settings() {
@@ -196,7 +209,11 @@ export function Settings() {
               onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
             />
             <span className="muted small">
-              {hint ? `${hint} ` : ''}Default {key === 'commissionRate' ? `${items.defaults[key] * 100}%` : key === 'voucherDays' ? items.defaults[key] : formatK(items.defaults[key])}.
+              {hint ? `${hint} ` : ''}Default {key === 'commissionRate'
+                ? `${items.defaults[key] * 100}%`
+                : ['voucherDays', 'unpaidCancelHours'].includes(key)
+                  ? items.defaults[key]
+                  : formatK(items.defaults[key])}.
             </span>
           </div>
         ))}

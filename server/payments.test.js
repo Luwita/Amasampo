@@ -353,3 +353,86 @@ describe('deleting a shop', () => {
     assert.equal(again.status, 201, JSON.stringify(again.body));
   });
 });
+
+describe('unpaid Mobile Money orders', () => {
+  const ago = (orderId, hours) =>
+    db.query(`UPDATE orders SET created_at = now() - make_interval(hours => $2) WHERE id = $1`, [orderId, hours]);
+  let shop;
+  let fan;
+
+  before(async () => {
+    // A fresh shop for these checks (the earlier one was deleted).
+    shop = (await api('GET', '/api/auth/me', undefined, seller.token)).body.shopId;
+    await api('PATCH', `/api/admin/shops/${shop}/verification`, { status: 'verified' }, admin.token);
+    fan = (await api('POST', '/api/products', { name: 'Desk Fan', category: 'home', price: 300, stock: 10 }, seller.token)).body.id;
+  });
+  const place = async () =>
+    (
+      await api(
+        'POST',
+        '/api/orders',
+        { items: [{ productId: fan, qty: 1 }], shipping, couriers: { [shop]: 'pickup' }, payment: 'momo' },
+        buyer.token,
+      )
+    ).body;
+
+  test('the buyer is reminded halfway, then an unpaid parcel is cancelled and its stock comes back', async () => {
+    const { checkUnpaidOrders } = await import('./jobs.js');
+    const o = await place();
+    assert.deepEqual(await checkUnpaidOrders(db), { buyersReminded: 0, shopsReminded: 0, cancelled: 0 }, 'too early');
+
+    sent.length = 0;
+    await ago(o.id, 13);
+    assert.equal((await checkUnpaidOrders(db)).buyersReminded, 1);
+    assert.match(textsTo('966200200')[0], /Reminder: pay K300 to Airtel Money 0977555123. Order .*: pay by .* or it will be cancelled/);
+    assert.equal((await checkUnpaidOrders(db)).buyersReminded, 0, 'reminded once');
+
+    await ago(o.id, 25);
+    assert.equal((await checkUnpaidOrders(db)).cancelled, 1);
+    const [mine] = (await api('GET', '/api/orders/mine', undefined, buyer.token)).body.filter((x) => x.id === o.id);
+    assert.equal(mine.shipments[0].status, 'cancelled');
+    assert.equal(mine.shipments[0].cancelReason, 'Not paid within 24 hours');
+    assert.equal((await api('GET', `/api/products/${fan}`)).body.stock, 10, 'stock is back on sale');
+    assert.match(textsTo('977100100').at(-1), /Order .* was cancelled.*didn't pay within 24 hours/);
+  });
+
+  test('a payment the buyer says they sent is never cancelled; the shop is reminded instead', async () => {
+    const { checkUnpaidOrders } = await import('./jobs.js');
+    const o = await place();
+    await api('POST', `/api/orders/${o.id}/shipments/${shop}/payment-sent`, { reference: 'MP99' }, buyer.token);
+    await ago(o.id, 30);
+    await db.query(`UPDATE shipments SET payment_sent_at = now() - interval '13 hours' WHERE order_id = $1`, [o.id]);
+    const done = await checkUnpaidOrders(db);
+    assert.equal(done.cancelled, 0);
+    assert.equal(done.shopsReminded, 1);
+    assert.match(textsTo('977100100').at(-1), /Please check the payment for order .*MP99/);
+  });
+
+  test('owners change the time limit', async () => {
+    assert.equal((await api('PATCH', '/api/admin/settings', { unpaidCancelHours: 1 }, admin.token)).status, 400);
+    assert.equal((await api('PATCH', '/api/admin/settings', { unpaidCancelHours: 48 }, admin.token)).status, 200);
+    assert.equal((await api('GET', '/api/settings')).body.unpaidCancelHours, 48);
+  });
+
+  test('staff confirm a payment for a shop, with a reason, and can then send the parcel', async () => {
+    const o = await place();
+    const confirm = (note, token = admin.token) =>
+      api('POST', `/api/admin/orders/${o.id}/shipments/${shop}/paid`, { note }, token);
+    assert.equal((await confirm('Shop confirmed by phone', seller.token)).status, 403);
+    assert.equal((await confirm('')).status, 400, 'a reason is needed');
+    const ok = await confirm('Shop confirmed by phone');
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.shipments[0].paid, true);
+    assert.match(textsTo('977100100').at(-1), /Zed Market confirmed the payment/);
+    assert.equal((await confirm('Again')).status, 409);
+    const sentNow = await api(
+      'PATCH',
+      `/api/admin/orders/${o.id}/shipments/${shop}/status`,
+      { status: 'dispatched', note: 'Shop asked us to' },
+      admin.token,
+    );
+    assert.equal(sentNow.status, 200);
+    const log = (await api('GET', '/api/admin/actions', undefined, admin.token)).body;
+    assert.ok(log.some((a) => a.action === 'payment confirmed' && /Shop confirmed by phone/.test(a.note)));
+  });
+});

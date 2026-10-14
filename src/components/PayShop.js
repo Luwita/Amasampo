@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as api from '../api';
 import { useStore } from '../context/StoreContext';
 import { formatK } from '../utils/format';
@@ -16,6 +16,13 @@ export default function PayShop({ order, shipment }) {
   const { reloadOrders, notify } = useStore();
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hours, setHours] = useState(null); // how long until an unpaid order is cancelled
+  useEffect(() => {
+    api
+      .settings()
+      .then((s) => setHours(s.unpaidCancelHours ?? null))
+      .catch(() => {});
+  }, []);
 
   if (!order.payByMomo || shipment.status === 'cancelled') return null;
   if (shipment.paid) {
@@ -68,6 +75,7 @@ export default function PayShop({ order, shipment }) {
       )}
       <p className="muted small">
         Check the name on your phone matches before you approve. The shop sends your parcel once the money arrives.
+        {hours ? ` Orders not paid within ${hours} hours are cancelled.` : ''}
       </p>
       <div className="inline-fields">
         <input

@@ -31,6 +31,9 @@ export const REFERRAL_REWARD = 50;
 export const VOUCHER_MIN_SPEND = 300;
 export const VOUCHER_DAYS = 60;
 
+// Mobile Money orders not paid within this many hours are cancelled; the buyer is reminded halfway.
+export const UNPAID_CANCEL_HOURS = 24;
+
 // Splits an order-level discount across parcels in proportion to their goods value (last parcel takes the rounding).
 export function splitDiscount(amount, goodsValues) {
   const total = goodsValues.reduce((n, v) => n + v, 0);

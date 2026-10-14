@@ -94,6 +94,11 @@ Product photos are stored in the database, so nothing needs a permanent disk. No
 
 ### Render + Neon
 
+The live database is the `production` branch of the Neon project in Frankfurt (`aws-eu-central-1`), next to the
+Render service. This computer uses the `development` branch: a copy of the live data made when it was created, which
+can be changed freely without touching the live site. `scripts/copy-database.js` copies all data between two
+databases (used to move the live database between regions).
+
 The project is linked to Neon (`neon.ts`, `.neon`). `neon env pull` (or `neon deploy`) writes `DATABASE_URL`
 (pooled, for the app) and `DATABASE_URL_UNPOOLED` (direct, for database updates) to `.env.local`, which
 `npm run server` and `npm run dev` load after `server/.env`. With them set, this computer uses the Neon database
@@ -150,6 +155,12 @@ has the money. Buyers choose one of two ways to pay:
   it update the order: sent (or ready to collect), then delivered. The buyer is told at each step, in the app and
   by text. An order from several shops is paid shop by shop.
 - **Pay on Delivery**, with the couriers that allow it.
+
+Unpaid Mobile Money orders don't hold stock forever: halfway to the limit set in Admin → Settings (24 hours to
+start) the buyer is reminded where to pay and by when, and at the limit the parcel is cancelled and both sides are
+told. If the buyer says they paid but the shop hasn't confirmed, the shop is reminded instead and the order is never
+cancelled automatically. These checks run every 10 minutes while the server is awake. Staff can confirm a payment
+for a shop (Admin → Orders → Payment received, with a reason) when the owner confirms by phone.
 
 A shop's Mobile Money number is shown only to its owner, to staff, and to buyers on their own orders. Shops opened
 before this was added see a reminder to add their number; until they do, buyers can only pay them on delivery.
@@ -225,7 +236,9 @@ shop (a shop owner who joins the team needs a different phone number).
   stays on hold for 7 days after delivery and while a return is open. Staff record each Mobile Money or bank payout
   with its reference (never more than is available); the shop is notified and sees its balance and history under
   Report in the seller dashboard.
-- **QR codes**: sign-up codes for shop owners (`/login?join=seller`, leads on to shop setup) and customers
+- **QR codes**: every shop also has its own QR code in My shop → Promotions, linking to its shop page, to print for
+  the counter or share.
+- **Sign-up QR codes**: codes for shop owners (`/login?join=seller`, leads on to shop setup) and customers
   (`/login?join=buyer`), with a printable poster to download and WhatsApp sharing. Ready-made images are in
   [qr-codes/](qr-codes/).
 - **Marketing**: home page banners (shown before the standard slides, with an end date), voucher campaigns paid

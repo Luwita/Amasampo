@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   COMMISSION_RATE,
   REFERRAL_REWARD,
+  UNPAID_CANCEL_HOURS,
   VOUCHER_DAYS,
   VOUCHER_MIN_SPEND,
   WELCOME_VOUCHER,
@@ -14,6 +15,7 @@ export const SETTINGS = {
   referralReward: { default: REFERRAL_REWARD, schema: z.coerce.number().min(0).max(5000) },
   voucherMinSpend: { default: VOUCHER_MIN_SPEND, schema: z.coerce.number().min(0).max(100000) },
   voucherDays: { default: VOUCHER_DAYS, schema: z.coerce.number().int().min(1).max(365) },
+  unpaidCancelHours: { default: UNPAID_CANCEL_HOURS, schema: z.coerce.number().int().min(2).max(168) },
 };
 
 export async function getSettings(q) {

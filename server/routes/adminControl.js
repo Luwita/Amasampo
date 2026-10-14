@@ -9,7 +9,7 @@ import { loadOrders, logAdmin, updateProduct } from '../queries.js';
 import { productSchema, shopSchema } from '../schemas.js';
 import { SETTINGS, getSettings, settingsSchema } from '../settings.js';
 import { saveShop } from './catalog.js';
-import { advanceShipment, shipmentUpdateSchema } from './orders.js';
+import { advanceShipment, confirmPayment, shipmentUpdateSchema } from './orders.js';
 
 const reason = z.string().trim().min(3, 'Give a reason; it is shown to the shop and kept in the log').max(500);
 
@@ -176,6 +176,24 @@ export function adminControlRoutes(db, { adminPhones = [] } = {}) {
       return saved;
     });
     res.json(updated);
+  });
+
+  // Confirm a Mobile Money payment for a shop, e.g. when the owner confirms by phone but can't use the app.
+  router.post('/orders/:orderId/shipments/:shopId/paid', async (req, res) => {
+    const [shop] = await db.query('SELECT * FROM shops WHERE id = $1', [req.params.shopId]);
+    if (!shop) throw new HttpError(404, 'Shop not found');
+    const why = parse(reason, req.body?.note);
+    const order = await confirmPayment(db, req.params.orderId, shop, async (t) => {
+      await logAdmin(t, req.user.id, 'payment confirmed', 'order', req.params.orderId, `${shop.name}: ${why}`);
+      await notifyShopOwner(t, shop.id, {
+        kind: 'payment',
+        title: `Zed Market confirmed the payment for order ${req.params.orderId}`,
+        body: `${why}. You can now send the parcel.`,
+        link: '/seller?tab=orders',
+      });
+    });
+    const [full] = await loadOrders(db, [order]);
+    res.json(full);
   });
 
   // Mark a parcel sent or delivered for a shop, e.g. when the courier confirms delivery by phone.

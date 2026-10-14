@@ -53,7 +53,8 @@ async function posterPng(code, url) {
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
-function QrCard({ code }) {
+// One QR code card with a poster to download. `code` is { id, title, who, path, text }.
+export function QrCard({ code }) {
   const { notify } = useStore();
   const url = `${window.location.origin}${code.path}`;
   const [svg, setSvg] = useState('');

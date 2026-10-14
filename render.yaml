@@ -5,6 +5,8 @@ services:
     name: amasampo
     runtime: node
     plan: free
+    # Next to the Neon database (Frankfurt), the closest region to Zambia.
+    region: frankfurt
     branch: main
     buildCommand: npm ci && npm run build
     startCommand: npm run server

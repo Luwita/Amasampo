@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { createDb, migrate } from './db.js';
 import { loadDelivery } from './delivery.js';
 import { smsFromEnv } from './sms.js';
+import { startJobs } from './jobs.js';
 import { backfillDemoProducts, seedIfEmpty } from './seed.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,6 +48,9 @@ const app = createApp(db, {
     .map((p) => p.trim())
     .filter(Boolean),
 });
+
+// Reminds buyers to pay and cancels Mobile Money orders nobody paid for.
+startJobs(db);
 
 app.listen(port, () =>
   console.log(

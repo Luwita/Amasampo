@@ -166,3 +166,38 @@ test('an owner deletes a shop with a reason, and it leaves the marketplace', asy
   expect(api.__db().shops.some((s) => s.id === 'shop_fans')).toBe(false);
   expect(api.__db().notifications[0].title).toBe('Zed Market removed your shop Mutinta Appliances');
 });
+
+test('staff confirm a Mobile Money payment for a shop before the parcel can be sent', async () => {
+  const { ownerToken } = setup();
+  api.__db().orders.push({
+    id: 'ZM-MOMO2',
+    buyerId: 'usr_1',
+    date: new Date().toISOString(),
+    buyer: { name: 'Chipo', phone: '0966111000' },
+    payment: 'Mobile Money',
+    payByMomo: true,
+    paid: false,
+    total: 500,
+    shipping: { province: 'lusaka', town: 'Lusaka' },
+    shipments: [{ shopId: 'shop_fans', shopName: 'Mutinta Appliances', status: 'pending', paid: false, courierName: 'Collect from shop', items: [] }],
+  });
+  api.setToken(ownerToken);
+  renderAt('/admin?tab=orders');
+  const order = (await screen.findByText('ZM-MOMO2')).closest('.order');
+  expect(within(order).getByText(/not paid yet/)).toBeInTheDocument();
+  expect(within(order).queryByRole('button', { name: 'Mark as sent' })).not.toBeInTheDocument();
+  fireEvent.click(within(order).getByRole('button', { name: 'Payment received' }));
+  type('Payment received: reason', 'Shop confirmed by phone');
+  fireEvent.click(within(order).getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(api.__db().orders[0].shipments[0].paid).toBe(true));
+  expect(await within(order).findByRole('button', { name: 'Mark as sent' })).toBeInTheDocument();
+});
+
+test("every shop has its own QR code linking to its shop page", async () => {
+  const { sellerToken } = setup();
+  api.setToken(sellerToken);
+  renderAt('/seller?tab=promotions');
+  expect(await screen.findByText(/Your shop's QR code/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: `${window.location.origin}/store/shop_fans` })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Download poster (PNG)' })).toBeInTheDocument();
+});

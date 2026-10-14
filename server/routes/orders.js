@@ -290,18 +290,7 @@ export function orderRoutes(db) {
   router.post('/:orderId/shipments/:shopId/paid', async (req, res) => {
     const shop = await myShopOrFail(db, req.user);
     if (shop.id !== req.params.shopId) throw new HttpError(403, 'You can only update your own parcels');
-    const [order] = await db.query('SELECT * FROM orders WHERE id = $1', [req.params.orderId]);
-    if (!order) throw new HttpError(404, 'Order not found');
-    await db.tx(async (t) => {
-      const s = await unpaidMomoParcel(t, order, shop.id);
-      await t.query('UPDATE shipments SET paid_at = now(), updated_at = now() WHERE id = $1', [s.id]);
-      await notify(t, order.buyer_id, {
-        kind: 'payment',
-        title: `${shop.name} received your payment`,
-        body: `${formatK(amountDue(s))} for order ${order.id}. Your parcel is being prepared.`,
-        link: '/account',
-      });
-    });
+    const order = await confirmPayment(db, req.params.orderId, shop);
     const [full] = await loadOrders(db, [order], shop.id);
     res.json(full);
   });
@@ -332,6 +321,25 @@ export function orderRoutes(db) {
   });
 
   return router;
+}
+
+// Records that a parcel's Mobile Money payment reached the shop, and tells the buyer. Used by the shop, and by
+// staff on the shop's behalf (`extra(t, parcel)` runs in the same transaction, e.g. to log it). Returns the order.
+export async function confirmPayment(db, orderId, shop, extra = null) {
+  const [order] = await db.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+  if (!order) throw new HttpError(404, 'Order not found');
+  await db.tx(async (t) => {
+    const s = await unpaidMomoParcel(t, order, shop.id);
+    await t.query('UPDATE shipments SET paid_at = now(), updated_at = now() WHERE id = $1', [s.id]);
+    await notify(t, order.buyer_id, {
+      kind: 'payment',
+      title: `${shop.name} received your payment`,
+      body: `${formatK(amountDue(s))} for order ${order.id}. Your parcel is being prepared.`,
+      link: '/account',
+    });
+    if (extra) await extra(t, s);
+  });
+  return order;
 }
 
 const amountDue = (s) => Number(s.subtotal) - Number(s.discount) - Number(s.voucher_discount) + Number(s.fee);

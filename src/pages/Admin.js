@@ -401,6 +401,7 @@ function Orders() {
             {o.shipments.map((s) => (
               <div key={s.shopId} className="order-shipment small">
                 <strong>{s.shopName}</strong> · {s.status} · {s.courierName}
+                {o.payByMomo && s.status === 'pending' && (s.paid ? ' · paid' : s.paymentSentAt ? ' · buyer says paid' : ' · not paid yet')}
                 {s.tracking && ` · ${s.tracking}`}
                 {s.cancelReason && (
                   <span className="muted">
@@ -410,7 +411,7 @@ function Orders() {
                 )}
                 {['pending', 'dispatched'].includes(s.status) && (
                   <div className="pdp-buttons">
-                    <ParcelControls orderId={o.id} shipment={s} run={run} />
+                    <ParcelControls orderId={o.id} shipment={s} payByMomo={o.payByMomo} run={run} />
                     <ReasonButton
                       label="Cancel parcel"
                       danger

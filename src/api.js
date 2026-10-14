@@ -186,6 +186,7 @@ export const admin = {
   editShop: (id, body) => request('PUT', `/admin/shops/${id}`, body),
   editProduct: (id, body) => request('PUT', `/admin/products/${id}`, body),
   setParcelStatus: (orderId, shopId, body) => request('PATCH', `/admin/orders/${orderId}/shipments/${shopId}/status`, body),
+  confirmPayment: (orderId, shopId, note) => request('POST', `/admin/orders/${orderId}/shipments/${shopId}/paid`, { note }),
   removeRequest: (id, reason) => request('POST', `/admin/requests/${id}/remove`, { reason }),
 };
 
