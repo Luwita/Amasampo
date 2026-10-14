@@ -1,7 +1,7 @@
 import { createPublicKey, randomBytes, verify } from 'node:crypto';
 import express from 'express';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { handleAuthProxyRequest } from '@neondatabase/auth/server';
+import { handleAuthProxyRequest, processAuthMiddleware } from '@neondatabase/auth/server';
 
 // Neon Auth (Managed Better Auth) runs the accounts: sign-up, sign-in, sessions and phone codes.
 //
@@ -41,6 +41,38 @@ export function authProxy({ baseUrl, cookieSecret }) {
     }
   });
   return router;
+}
+
+// Finishes a Google sign-in. Google sends the person back to a ZedMarket page with a one-time
+// `neon_auth_session_verifier`; together with the challenge cookie set when they started, it is exchanged here for
+// the session cookie, and the page is reloaded without it. This is what Neon's own server middleware does.
+export function finishOAuthSignIn({ baseUrl, cookieSecret }) {
+  return async (req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/') || !req.query.neon_auth_session_verifier) return next();
+    try {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(req.headers)) {
+        if (!HOP_HEADERS.has(name) && value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
+      }
+      const request = new Request(new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`), { headers });
+      const result = await processAuthMiddleware({
+        request,
+        pathname: req.path,
+        skipRoutes: ['/'], // no page is protected here; the API checks sign-in itself
+        loginUrl: '/__not-a-page__',
+        baseUrl,
+        cookieSecret,
+        sameSite: 'lax',
+      });
+      if (result.action === 'redirect_oauth') {
+        if (result.cookies.length) res.setHeader('set-cookie', result.cookies);
+        return res.redirect(302, `${result.redirectUrl.pathname}${result.redirectUrl.search}`);
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 // Checks a Neon Auth token and returns who it belongs to: { id, email, name }, or null if it isn't valid.

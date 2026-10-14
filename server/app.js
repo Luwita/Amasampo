@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { authenticate, neonAuthWebhook, neonDeleteIdentity, neonPhoneLookup, sessionRoutes } from './auth.js';
-import { authProxy, devCookieSecret, neonTokenVerifier, neonWebhookVerifier } from './neonAuth.js';
+import { authProxy, devCookieSecret, finishOAuthSignIn, neonTokenVerifier, neonWebhookVerifier } from './neonAuth.js';
 import { HttpError } from './http.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { accountRoutes } from './routes/account.js';
@@ -44,7 +44,10 @@ export function createApp(
   app.set('trust proxy', 1); // behind the host's HTTPS proxy, so cookies and links use https
 
   // These two read the raw request, so they come before JSON parsing.
-  if (baseUrl) app.use('/api/auth', authProxy({ baseUrl, cookieSecret }));
+  if (baseUrl) {
+    app.use('/api/auth', authProxy({ baseUrl, cookieSecret }));
+    app.use(finishOAuthSignIn({ baseUrl, cookieSecret })); // the page Google sends people back to
+  }
   app.use('/api/webhooks/neon-auth', neonAuthWebhook(db, { sms, exposeCodes, verifyWebhook, adminPhones, adminEmails }));
   app.use(express.json({ limit: '3mb' })); // room for one base64 photo
 
