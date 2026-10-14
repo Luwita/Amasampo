@@ -14,8 +14,23 @@ function commitHooks() {
 //   DATABASE_URL=postgres://...  -> a real Postgres server (production)
 //   otherwise                    -> PGlite, Postgres running in-process, stored in PGLITE_DIR (development)
 // Both speak the same SQL, so queries and migrations are identical.
+// A connection string as pasted into a host's settings: without surrounding spaces or quotes, or a leading
+// "DATABASE_URL=" copied along with it.
+export function cleanDatabaseUrl(url) {
+  return (url ?? '')
+    .trim()
+    .replace(/^[A-Z_]+=/, '')
+    .replace(/^['"]|['"]$/g, '')
+    .trim();
+}
+
 export async function createDb({ url = process.env.DATABASE_URL, dataDir = process.env.PGLITE_DIR } = {}) {
-  if (url && /^postgres(ql)?:\/\//.test(url)) {
+  url = cleanDatabaseUrl(url);
+  // A connection string that isn't one is a setup mistake: never fall back to the built-in database for it.
+  if (url && !/^postgres(ql)?:\/\//.test(url)) {
+    throw new Error('DATABASE_URL must start with postgresql:// (check the value in your host settings)');
+  }
+  if (url) {
     const { default: pg } = await import('pg');
     const pool = new pg.Pool({ connectionString: url });
     return {

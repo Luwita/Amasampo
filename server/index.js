@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
-import { createDb, migrate } from './db.js';
+import { cleanDatabaseUrl, createDb, migrate } from './db.js';
 import { loadDelivery } from './delivery.js';
 import { smsFromEnv } from './sms.js';
 import { startJobs } from './jobs.js';
@@ -12,7 +12,16 @@ const production = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT) || 4000;
 
 const dataDir = process.env.PGLITE_DIR ?? path.join(root, 'server', '.data', 'pg');
+// The built-in database is for development only: on a host it would lose data on every restart and needs more
+// memory than small plans have. So production never starts without a real Postgres database.
+if (production && !cleanDatabaseUrl(process.env.DATABASE_URL)) {
+  console.error('DATABASE_URL is not set. Add the Neon connection string (postgresql://...) to the server settings.');
+  process.exit(1);
+}
 const db = await createDb({ dataDir });
+if (db.kind === 'postgres') {
+  console.log(`Database: Postgres at ${new URL(cleanDatabaseUrl(process.env.DATABASE_URL)).hostname}`);
+}
 // Neon: the app's queries go through the pooled address (DATABASE_URL); database updates use the direct one
 // (DATABASE_URL_UNPOOLED), because the pooler doesn't keep a session open between statements.
 let applied;
