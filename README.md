@@ -140,13 +140,15 @@ is needed for the build, but the App Store needs an Apple Developer account.
 
 ## Payments
 
-There is no payment provider yet, so Zed Market never holds a buyer's money. Buyers choose one of two ways to pay:
+Zed Market never holds a buyer's money: buyers pay the shop directly, and the shop moves the order along once it
+has the money. Buyers choose one of two ways to pay:
 
 - **Mobile Money, straight to the shop.** Every shop gives a Mobile Money number (network, number and the name it
   is registered in) when it opens; a shop can't be saved without one. After ordering, the buyer is shown and texted
   that number with the amount for each shop, sends the money, and taps **I've paid** (with the transaction ID if
   they have it). The shop checks its Mobile Money, taps **Payment received** in My shop → Orders, and only then can
-  it mark the parcel as sent. An order from several shops is paid shop by shop.
+  it update the order: sent (or ready to collect), then delivered. The buyer is told at each step, in the app and
+  by text. An order from several shops is paid shop by shop.
 - **Pay on Delivery**, with the couriers that allow it.
 
 A shop's Mobile Money number is shown only to its owner, to staff, and to buyers on their own orders. Shops opened
@@ -160,8 +162,8 @@ arrives, staff choose **Commission received** and enter the reference (never mor
 **Remind** sends the shop the amount and where to pay, in the app and by text. A shop that doesn't pay can be
 suspended from the Shops tab. If a parcel is cancelled after the
 shop confirmed the payment, a refund is recorded, the shop is told to send the money back, and staff mark the refund
-as paid once it has. When a payment provider is added later, orders it collects use the `paid` status and are paid
-out to shops as before.
+as paid once it has. (Orders with the older `paid` status, from before direct payment, still count as paid to Zed
+Market in the payouts.)
 
 ## Selling tools
 
@@ -341,8 +343,6 @@ the dashboard.
 
 - **SMS provider:** connected through Africa's Talking (see above); add your live `AT_USERNAME` and `AT_API_KEY`
   to `server/.env` before launch. Without them no sign-in code or order text is sent.
-- **A payment provider** (Mobile Money collections and cards), so Zed Market can hold the money until delivery and
-  pay shops out. Until then buyers pay shops directly (see Payments) and Zed Market cannot protect a payment.
 - **Commission account:** save the Mobile Money number shops send their commission to in Admin → Payouts.
 - **WhatsApp copies of notifications**: important notifications go by SMS; WhatsApp needs a WhatsApp Business account.
 - **Legal review:** the pages under `/legal` are drafts and must be reviewed by a Zambian lawyer. Register with the

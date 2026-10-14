@@ -144,7 +144,7 @@ export function orderRoutes(db) {
       const { priced, couponRows, voucherRow } = await priceForBuyer(t, req.user, body, true);
 
       const id = newOrderId();
-      // No payment provider is connected yet: Mobile Money goes straight to each shop's number, and the shop
+      // Zed Market never holds the money: Mobile Money goes straight to each shop's number, and the shop
       // confirms it arrived before sending the parcel.
       const byMomo = body.payment === 'momo';
       const paymentStatus = byMomo ? 'momo_direct' : 'cod_due';

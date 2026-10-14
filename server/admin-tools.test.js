@@ -110,7 +110,7 @@ describe('admin tools', () => {
 
   test('payouts: money is held through the return window, then paid out once', async () => {
     const balance = async () => (await api('GET', '/api/seller/payouts', undefined, seller.token)).body;
-    // An order paid to Zed Market, as it will be once a payment provider is connected.
+    // An older order paid to Zed Market (before buyers paid shops directly) still earns the shop a payout.
     const paid = (await order('momo')).body;
     await db.query(`UPDATE orders SET payment_status = 'paid' WHERE id = $1`, [paid.id]);
     await deliver(paid.id);
