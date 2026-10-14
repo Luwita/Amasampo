@@ -2,7 +2,7 @@
 # Settings marked `sync: false` are secrets: Render asks for them when the Blueprint is created.
 services:
   - type: web
-    name: amasampo
+    name: zedmarket
     runtime: node
     plan: free
     # Next to the Neon database (Frankfurt), the closest region to Zambia.

@@ -97,20 +97,20 @@ Product photos are stored in the database, so nothing needs a permanent disk. No
 
 ### Render + Neon
 
-The live database is the `production` branch of the Neon project in Frankfurt (`aws-eu-central-1`), next to the
-Render service. This computer uses the `development` branch: a copy of the live data made when it was created, which
-can be changed freely without touching the live site. `scripts/copy-database.js` copies all data between two
-databases (used to move the live database between regions).
+Use a Neon project in Frankfurt (`aws-eu-central-1`) and a Render service in Frankfurt, next to each other and the
+closest region to Zambia. Give the live site the Neon project's `production` branch, and this computer a separate
+`development` branch, so testing here never touches live data. `scripts/copy-database.js` copies all data between two
+databases (e.g. to move the live database to another region).
 
-The project is linked to Neon (`neon.ts`, `.neon`). `neon env pull` (or `neon deploy`) writes `DATABASE_URL`
-(pooled, for the app) and `DATABASE_URL_UNPOOLED` (direct, for database updates) to `.env.local`, which
-`npm run server` and `npm run dev` load after `server/.env`. With them set, this computer uses the Neon database
-instead of the local one; remove or rename `.env.local` to go back to the local database. `npm run reset:catalog`
-only ever touches the local database.
+`neon env pull` (or `neon deploy`) writes `DATABASE_URL` (pooled, for the app) and `DATABASE_URL_UNPOOLED` (direct,
+for database updates) to `.env.local`, which `npm run server` and `npm run dev` load after `server/.env`. With them
+set, this computer uses that Neon database instead of the local one; without `.env.local` it uses the local database
+in `server/.data/`. `npm run reset:catalog` only ever touches the local database.
 
-[render.yaml](render.yaml) describes the service. In Render choose **New → Blueprint**, pick this repository, and
-fill in the settings it asks for: `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (from `.env.local`), `ADMIN_PHONES`,
-`AT_USERNAME` and `AT_API_KEY`. Every push to `main` deploys again; database changes are applied automatically when the server
+[render.yaml](render.yaml) describes the service (`zedmarket`, Frankfurt). In Render choose **New → Blueprint**, pick
+this repository, and fill in the settings it asks for: `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (the
+`production` branch's addresses, pasted without quotes), `ADMIN_PHONES`, `AT_USERNAME` and `AT_API_KEY`. In
+production the server refuses to start without a `postgresql://` `DATABASE_URL`, and says so in the log. Every push to `main` deploys again; database changes are applied automatically when the server
 starts. On Render's free plan the server sleeps after a while without visitors and takes up to a minute to wake.
 
 The app can be installed on phones ("Add to home screen" / the Install button) once it is served over HTTPS.
@@ -242,8 +242,8 @@ shop (a shop owner who joins the team needs a different phone number).
 - **QR codes**: every shop also has its own QR code in My shop → Promotions, linking to its shop page, to print for
   the counter or share.
 - **Sign-up QR codes**: codes for shop owners (`/login?join=seller`, leads on to shop setup) and customers
-  (`/login?join=buyer`), with a printable poster to download and WhatsApp sharing. Ready-made images are in
-  [qr-codes/](qr-codes/).
+  (`/login?join=buyer`), with a printable poster to download and WhatsApp sharing. They always use the address the
+  site is on, so make them once the site is live.
 - **Marketing**: home page banners (shown before the standard slides, with an end date), voucher campaigns paid
   for by Zed Market (everyone, shoppers, shop owners, one province or one phone number; group sends need a second
   click), and announcements to the 🔔 bell.
