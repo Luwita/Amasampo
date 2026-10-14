@@ -24,6 +24,7 @@ export function authProxy({ baseUrl, cookieSecret }) {
       for (const [name, value] of Object.entries(req.headers)) {
         if (!HOP_HEADERS.has(name) && value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
       }
+      if (!headers.has('origin')) headers.set('origin', `${req.protocol}://${req.get('host')}`);
       const hasBody = !['GET', 'HEAD'].includes(req.method) && Buffer.isBuffer(req.body) && req.body.length > 0;
       const request = new Request(url, { method: req.method, headers, body: hasBody ? req.body : undefined });
       const path = [req.params.path ?? []].flat().join('/');
@@ -50,11 +51,17 @@ export function finishOAuthSignIn({ baseUrl, cookieSecret }) {
   return async (req, res, next) => {
     if (req.method !== 'GET' || req.path.startsWith('/api/') || !req.query.neon_auth_session_verifier) return next();
     try {
+      const site = `${req.protocol}://${req.get('host')}`;
       const headers = new Headers();
       for (const [name, value] of Object.entries(req.headers)) {
         if (!HOP_HEADERS.has(name) && value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
       }
-      const request = new Request(new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`), { headers });
+      // The browser arrives from Google or Neon, so its Referer names them. Neon only trusts ZedMarket's own
+      // address, so the exchange is made as ZedMarket.
+      headers.set('origin', site);
+      headers.delete('referer');
+      const request = new Request(new URL(req.originalUrl, site), { headers });
+      const hasChallenge = /neon-auth\.session_chall[ae]nge=/.test(req.get('cookie') ?? '');
       const result = await processAuthMiddleware({
         request,
         pathname: req.path,
@@ -64,6 +71,11 @@ export function finishOAuthSignIn({ baseUrl, cookieSecret }) {
         cookieSecret,
         sameSite: 'lax',
       });
+      const signedIn = result.action === 'redirect_oauth' && result.cookies.some((c) => c.includes('session_token='));
+      console.log(
+        `[auth] Google sign-in return: challenge cookie ${hasChallenge ? 'present' : 'missing'}, ` +
+          `${result.action === 'redirect_oauth' ? 'exchanged' : 'not exchanged'}, session ${signedIn ? 'set' : 'not set'}`,
+      );
       if (result.action === 'redirect_oauth') {
         if (result.cookies.length) res.setHeader('set-cookie', result.cookies);
         return res.redirect(302, `${result.redirectUrl.pathname}${result.redirectUrl.search}`);
