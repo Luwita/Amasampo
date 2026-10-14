@@ -693,7 +693,7 @@ const raw = [
   ],
 ];
 
-// Shipping weight per unit (kg), used to price delivery.
+// Weight per unit (kg), used to price delivery.
 const weights = {
   p1: 0.4,
   p2: 0.4,

@@ -378,7 +378,7 @@ export default function ProductDetail() {
           <ul className="assurances">
             <li>📲 Pay by MTN MoMo, Airtel Money or Zamtel Kwacha, or on delivery</li>
             <li>↩️ 7-day returns if the item is not as described</li>
-            <li>⚖️ Shipping weight: {formatKg(product.weightKg ?? 1)} per unit</li>
+            <li>⚖️ Weight: {formatKg(product.weightKg ?? 1)} per unit (used to price delivery)</li>
           </ul>
         </aside>
       </div>
