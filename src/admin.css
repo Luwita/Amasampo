@@ -116,6 +116,16 @@
   margin: 6px 0 0;
 }
 
+/* All admin sections stay visible: the tabs wrap onto more lines instead of scrolling off the screen. */
+.admin-tabs {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.admin-tabs button {
+  white-space: nowrap;
+  padding: 8px 12px;
+}
+
 /* Sign-up QR codes */
 .qr-grid {
   display: grid;

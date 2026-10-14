@@ -88,6 +88,10 @@ function Overview({ go }) {
         {tile('Shops', s.shops, `${s.products} products`, 'shops')}
         {tile('Users', s.users, null, 'users')}
       </div>
+      <h3>Grow the marketplace</h3>
+      <div className="tiles">
+        {tile('Sign-up QR codes', '📱', 'for shop owners and customers', 'qr')}
+      </div>
     </>
   );
 }
@@ -737,7 +741,7 @@ export default function Admin() {
   return (
     <div className="container section admin">
       <h1>🛡 Zed Market admin</h1>
-      <div className="tabs tabs-scroll">
+      <div className="tabs admin-tabs">
         {TABS.map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => go(id)}>
             {label}
