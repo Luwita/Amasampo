@@ -32,7 +32,11 @@ services:
       - key: ADMIN_PHONES
         sync: false
       - key: ADMIN_EMAILS
-        sync: false
+        value: noahluwita9@gmail.com
+      # Test mode: phone sign-in codes are also shown on screen (never staff or owner codes).
+      # Remove before real customers use the site; the admin overview warns while it is on.
+      - key: SHOW_SIGNIN_CODES
+        value: "1"
       - key: AT_USERNAME
         sync: false
       - key: AT_API_KEY
